@@ -1,0 +1,18 @@
+FROM webdevops/php-apache:alpine-php7
+
+RUN apk --no-cache add \
+    jpegoptim \
+    mariadb-client \
+    imagemagick \
+    php7-imagick \
+    ffmpeg
+
+#RUN mkdir /etc/cron.d && docker-service-enable cron
+#RUN docker-cronjob '* * * * * application sh -c "cd /src && php artisan schedule:run"'
+#RUN docker-cronjob '* * * * * application cd /src && php artisan queue:work'
+COPY laravel-worker.conf /opt/docker/etc/supervisor.d/
+
+ENV APPLICATION_UID=1001 \
+    APPLICATION_GID=1001
+RUN usermod -u 1001 application \
+    && groupmod -g 1001 application
