@@ -6,6 +6,8 @@ agent:
     os_image: ubuntu1804
 blocks:
   - name: build
+    skip:
+      when: "branch = 'master'"
     task:
       prologue:
         commands:
@@ -15,8 +17,8 @@ blocks:
           commands:
             - checkout
             - docker build . -f Dockerfile.ubuntu -t vasya
-            - 'docker tag vasya "${IMAGE_NAME}:latest"'
-            - 'docker push "${IMAGE_NAME}:latest"'
+            - 'docker tag vasya "${IMAGE_NAME}:$SEMAPHORE_GIT_BRANCH"'
+            - 'docker push "${IMAGE_NAME}:$SEMAPHORE_GIT_BRANCH"'
       secrets:
         - name: dockerhub-1allen
       env_vars:
