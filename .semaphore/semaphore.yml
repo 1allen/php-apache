@@ -1,0 +1,24 @@
+version: v1.0
+name: php-apache semaphore ci
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu1804
+blocks:
+  - name: build
+    task:
+      prologue:
+        commands:
+          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+      jobs:
+        - name: docker build & push
+          commands:
+            - checkout
+            - docker build . -f Dockerfile.ubuntu -t vasya
+            - 'docker tag vasya "${IMAGE_NAME}:latest"'
+            - 'docker push "${IMAGE_NAME}:latest"'
+      secrets:
+        - name: dockerhub-1allen
+      env_vars:
+        - name: IMAGE_NAME
+          value: 1allen/php-apache
