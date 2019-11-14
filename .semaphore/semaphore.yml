@@ -16,9 +16,9 @@ blocks:
         - name: docker build & push
           commands:
             - checkout
-            - docker build . -f Dockerfile.ubuntu -t vasya
-            - 'docker tag vasya "${IMAGE_NAME}:$SEMAPHORE_GIT_BRANCH"'
-            - 'docker push "${IMAGE_NAME}:$SEMAPHORE_GIT_BRANCH"'
+            - docker build --cache-from "$IMAGE_NAME:$SEMAPHORE_GIT_BRANCH" . -f Dockerfile.ubuntu -t vasya
+            - docker tag vasya "$IMAGE_NAME:$SEMAPHORE_GIT_BRANCH"
+            - docker push "$IMAGE_NAME:$SEMAPHORE_GIT_BRANCH"
       secrets:
         - name: dockerhub-1allen
       env_vars:
