@@ -28,7 +28,7 @@ RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VER
 RUN  curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
     && tar zxf imagick.tar.gz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
-    && docker-php-ext-configure imagick --with-webp \
+    && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
     && rm imagick.tar.gz
 RUN docker-image-cleanup
