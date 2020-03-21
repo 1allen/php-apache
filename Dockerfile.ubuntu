@@ -14,24 +14,23 @@ RUN apt-get update \
     ffmpeg \
     libgmp-dev
 
+WORKDIR /tmp
+
 RUN docker-php-ext-configure gmp && docker-php-ext-install gmp
 RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
     && tar zxf imagemagick.tar.gz \
-    && rm imagemagick.tar.gz \
     && cd ImageMagick-$IMAGEMAGICK_VERSION \
     && ./configure --with-modules --enable-shared --with-webp \
     && make -j$(nproc) \
     && make install \
-    && cd .. \
-    && rm -rf ImageMagick-$IMAGEMAGICK_VERSION \
     && ldconfig /usr/local/lib
-RUN  curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
+RUN curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
     && tar zxf imagick.tar.gz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
-    && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tar.gz
-RUN docker-image-cleanup
+    && docker-php-ext-install -j$(nproc) imagick
+RUN docker-image-cleanup \
+    && rm -rf /usr/src/php/ext/imagick
 
 #RUN mkdir /etc/cron.d && docker-service-enable cron
 #RUN docker-cronjob '* * * * * application sh -c "cd /src && php artisan schedule:run"'
