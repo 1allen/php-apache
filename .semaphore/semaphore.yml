@@ -26,6 +26,6 @@ blocks:
         - name: IMAGE_NAME
           value: 1allen/php-apache
         - name: IMAGE_TAG
-          value: {$SEMAPHORE_GIT_BRANCH:-$SEMAPHORE_GIT_TAG_NAME}
+          value: ${SEMAPHORE_GIT_BRANCH:-SEMAPHORE_GIT_TAG_NAME}
         - name: IMAGE_NAME_LOCAL
           value: php-apache:$IMAGE_TAG
