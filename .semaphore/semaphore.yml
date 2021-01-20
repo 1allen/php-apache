@@ -16,16 +16,16 @@ blocks:
         - name: docker build & push
           commands:
             - checkout
-            - docker pull "$IMAGE_NAME:IMAGE_TAG" || true
-            - docker build --cache-from "$IMAGE_NAME:$IMAGE_TAG" . -f Dockerfile.ubuntu -t "$IMAGE_NAME_BASE:$IMAGE_TAG"
-            - docker tag "$IMAGE_NAME_BASE:$IMAGE_TAG" "$IMAGE_NAME:$IMAGE_TAG"
-            - docker push "$IMAGE_NAME:IMAGE_TAG"
+            - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
+            - docker build --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
+            - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
+            - docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
       secrets:
         - name: dockerhub-1allen
       env_vars:
+        - name: DOCKER_USERNAME
+          value: 1allen
         - name: IMAGE_NAME
-          value: 1allen/php-apache
+          value: php-apache
         - name: IMAGE_TAG
           value: ${SEMAPHORE_GIT_BRANCH:-SEMAPHORE_GIT_TAG_NAME}
-        - name: IMAGE_NAME_BASE
-          value: php-apache
