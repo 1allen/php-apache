@@ -16,6 +16,7 @@ blocks:
         - name: docker build & push
           commands:
             - checkout
+            - env IMAGE_TAG=${SEMAPHORE_GIT_BRANCH:-SEMAPHORE_GIT_TAG_NAME}
             - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
             - docker build --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
             - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
@@ -27,5 +28,3 @@ blocks:
           value: 1allen
         - name: IMAGE_NAME
           value: php-apache
-        - name: IMAGE_TAG
-          value: ${SEMAPHORE_GIT_BRANCH:-SEMAPHORE_GIT_TAG_NAME}
