@@ -21,7 +21,7 @@ FROM webdevops/php-apache:7.4
 ARG GIDUID=1001
 ARG IMAGICK_VERSION=3.4.4
 
-COPY --from=builder /tmp/imgck/ /
+COPY --from=builder /tmp/imgck/ /usr/local/
 
 WORKDIR /tmp
 
