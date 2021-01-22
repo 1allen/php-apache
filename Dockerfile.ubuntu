@@ -42,9 +42,9 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
     && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
     && rm imagick.tar.gz \
-
+##
     && ldconfig /usr/local/lib \
-
+##
     && apt purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
     && docker-image-cleanup
 
