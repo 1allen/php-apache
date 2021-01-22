@@ -13,10 +13,17 @@ RUN apt-get update \
     && make install
 
 
+
 FROM webdevops/php-apache:7.4
 
 ARG GIDUID=1001
 ARG IMAGICK_VERSION=3.4.4
+
+COPY --from=builder /usr/local/etc/ImageMagick-7 /usr/local/etc/ImageMagick-7
+COPY --from=builder /usr/local/include/ImageMagick-7 /usr/local/include/ImageMagick-7
+COPY --from=builder /usr/local/lib/libMa* /usr/local/lib/
+
+WORKDIR /tmp
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests \
@@ -28,22 +35,16 @@ RUN apt-get update \
     libgmp-dev \
     libmagickwand-dev
 
-WORKDIR /tmp
-
-RUN docker-php-ext-configure gmp && docker-php-ext-install gmp
-
-RUN curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
+RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
+    && curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
     && tar zxf imagick.tar.gz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tar.gz
+    && rm imagick.tar.gz \
 
-    COPY --from=builder /usr/local/etc/ImageMagick-7 /usr/local/etc/ImageMagick-7
-    COPY --from=builder /usr/local/include/ImageMagick-7 /usr/local/include/ImageMagick-7
-    COPY --from=builder /usr/local/lib/libMa* /usr/local/lib/
+    && ldconfig /usr/local/lib \
 
-RUN ldconfig /usr/local/lib \
     && apt purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
     && docker-image-cleanup
 
