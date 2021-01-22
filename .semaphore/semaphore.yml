@@ -18,7 +18,7 @@ blocks:
             - checkout
             - IMAGE_TAG=${SEMAPHORE_GIT_TAG_NAME:-$SEMAPHORE_GIT_BRANCH}
             - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
-            - docker build --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
+            - docker build --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
             - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
             - docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
       secrets:
@@ -28,3 +28,5 @@ blocks:
           value: 1allen
         - name: IMAGE_NAME
           value: php-apache
+        - name: BUILDER_IMAGE
+          value: spritsail/debian-builder:latest
