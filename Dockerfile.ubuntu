@@ -45,7 +45,7 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
 ##
     && ldconfig /usr/local/lib \
 ##
-    && apt purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
+    && apt-get purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
     && docker-image-cleanup
 
 ENV APPLICATION_UID=$GIDUID \
