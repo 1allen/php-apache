@@ -24,6 +24,7 @@ RUN apt-get update \
     mariadb-client \
     webp \
     ffmpeg \
+    libxt6 \
     libgmp-dev \
     libmagickwand-dev
 
@@ -40,11 +41,10 @@ RUN curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz
 
     COPY --from=builder /usr/local/etc/ImageMagick-7 /usr/local/etc/ImageMagick-7
     COPY --from=builder /usr/local/include/ImageMagick-7 /usr/local/include/ImageMagick-7
-    COPY --from=builder /usr/local/lib/* /usr/local/lib/
+    COPY --from=builder /usr/local/lib/libMa* /usr/local/lib/
 
 RUN ldconfig /usr/local/lib \
     && apt purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
-    && apt-get install -y libxt6 \
     && docker-image-cleanup
 
 ENV APPLICATION_UID=$GIDUID \
