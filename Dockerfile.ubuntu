@@ -8,8 +8,9 @@ RUN apt-get update \
     && tar zxf imagemagick.tar.gz \
     && rm imagemagick.tar.gz \
     && cd ImageMagick-$IMAGEMAGICK_VERSION \
-    && ./configure --disable-static --disable-docs \
-        --without-magick-plus-plus --disable-docs --with-webp --enable-symbol-prefix --prefix=/tmp/imgck \
+    && ./configure --disable-static --disable-docs --without-magick-plus-plus \
+         --with-webp \
+         --enable-symbol-prefix --prefix=/tmp/imgck \
     && make -j$(nproc) \
     && make install
 
@@ -20,7 +21,7 @@ FROM webdevops/php-apache:7.4
 ARG GIDUID=1001
 ARG IMAGICK_VERSION=3.4.4
 
-COPY --from=builder /tmp/imgck /
+COPY --from=builder /tmp/imgck/ /
 
 WORKDIR /tmp
 
