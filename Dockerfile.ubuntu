@@ -3,14 +3,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 ARG IMAGEMAGICK_VERSION=7.0.10-58
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests libwebp-dev libmagickwand-dev \
-    && curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
+    && apt-get install -y --no-install-recommends --no-install-suggests libwebp-dev libmagickwand-dev
+RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
     && tar zxf imagemagick.tar.gz \
     && rm imagemagick.tar.gz \
     && cd ImageMagick-$IMAGEMAGICK_VERSION \
-    && ./configure --disable-static --disable-docs --without-magick-plus-plus \
-         --with-webp \
-         --enable-symbol-prefix --prefix=/tmp/imgck \
+    && ./configure \
+        --disable-docs \
+        --without-magick-plus-plus \
+        --with-webp \
+        --enable-symbol-prefix \
+        --prefix=/tmp/imgck \
+        --exec-prefix=/usr/local \
     && make -j$(nproc) \
     && make install
 
