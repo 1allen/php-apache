@@ -1,7 +1,7 @@
 FROM spritsail/debian-builder as builder
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG IMAGEMAGICK_VERSION=7.0.10-58
+ARG IMAGEMAGICK_VERSION=7.1.0-52
 RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests libwebp-dev libmagickwand-dev
 RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
@@ -22,7 +22,7 @@ RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VER
 FROM webdevops/php-apache:8.0
 
 ARG GIDUID=1001
-ARG IMAGICK_VERSION=3.4.4
+ARG IMAGICK_VERSION=3.7.0
 
 COPY --from=builder /tmp/imgck/ /usr/local/
 
