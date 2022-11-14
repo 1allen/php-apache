@@ -39,12 +39,12 @@ RUN apt-get update \
     libmagickwand-dev
 
 RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
-    && curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
-    && tar zxf imagick.tar.gz \
+    && curl -L http://pecl.php.net/get/imagick-3.7.0.tgz -o imagick.tgz \
+    && tar xf imagick.tgz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tar.gz \
+    && rm imagick.tgz \
 ##
     && ldconfig /usr/local/lib \
 ##
