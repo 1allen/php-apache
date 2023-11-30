@@ -1,7 +1,7 @@
 FROM spritsail/debian-builder as builder
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG IMAGEMAGICK_VERSION=7.0.10-58
+ARG IMAGEMAGICK_VERSION=7.1.1-21
 RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests libwebp-dev libmagickwand-dev
 RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
@@ -22,7 +22,7 @@ RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VER
 FROM webdevops/php-apache:7.3
 
 ARG GIDUID=1001
-ARG IMAGICK_VERSION=3.4.4
+ARG IMAGICK_VERSION=3.7.0
 
 COPY --from=builder /tmp/imgck/ /usr/local/
 
@@ -39,12 +39,12 @@ RUN apt-get update \
     libmagickwand-dev
 
 RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
-    && curl -L https://github.com/Imagick/imagick/archive/{$IMAGICK_VERSION}.tar.gz -o imagick.tar.gz \
-    && tar zxf imagick.tar.gz \
+    && curl -L https://pecl.php.net/get/imagick-{$IMAGICK_VERSION}.tgz -o imagick.tgz \
+    && tar xf imagick.tgz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tar.gz \
+    && rm imagick.tgz \
 ##
     && ldconfig /usr/local/lib \
 ##
