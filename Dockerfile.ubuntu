@@ -45,7 +45,7 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
     && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tar.gz \
+    && rm imagick.tgz \
 ##
     && ldconfig /usr/local/lib \
 ##
