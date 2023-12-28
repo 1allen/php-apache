@@ -3,7 +3,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 ARG IMAGEMAGICK_VERSION=7.1.1-21
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests libwebp-dev libmagickwand-dev
+    && apt-get install -y --no-install-recommends --no-install-suggests \
+    libwebp-dev \
+    libmagickwand-dev
 RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
     && tar zxf imagemagick.tar.gz \
     && rm imagemagick.tar.gz \
@@ -51,7 +53,10 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
     && apt-get purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
     && docker-image-cleanup
 
+WORKDIR /home/application
+
 ENV APPLICATION_UID=$GIDUID \
     APPLICATION_GID=$GIDUID
 RUN usermod -u $GIDUID application \
-    && groupmod -g $GIDUID application
+    && groupmod -g $GIDUID application \
+    && chown -R application: /home/application
