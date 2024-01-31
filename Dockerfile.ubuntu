@@ -1,7 +1,7 @@
 FROM spritsail/debian-builder as builder
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG IMAGEMAGICK_VERSION=7.1.1-21
+ARG IMAGEMAGICK_VERSION=7.1.1-27
 RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests \
     libwebp-dev \
