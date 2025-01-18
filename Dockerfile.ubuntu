@@ -1,7 +1,12 @@
-FROM spritsail/debian-builder as builder
-ENV DEBIAN_FRONTEND=noninteractive
+FROM spritsail/debian-builder AS builder
 
-ARG IMAGEMAGICK_VERSION=7.1.1-27
+# https://github.com/ImageMagick/ImageMagick/releases
+ARG IMAGEMAGICK_VERSION=7.1.1-43
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV MAKEFLAGS="-j$(nproc)"
+
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests \
     libwebp-dev \
@@ -23,10 +28,17 @@ RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VER
 
 FROM webdevops/php-apache:8.0
 
-ARG GIDUID=1001
+ARG UID=1001
+ARG GID=1001
+# https://pecl.php.net/package/imagick/3.7.0
 ARG IMAGICK_VERSION=3.7.0
 
-COPY --from=builder /tmp/imgck/ /usr/local/
+ENV DEBIAN_FRONTEND=noninteractive
+ENV MAKEFLAGS="-j$(nproc)"
+ENV APPLICATION_UID=$UID
+ENV APPLICATION_GID=$GID
+
+COPY --chown=$UID:$GID --from=builder /tmp/imgck/ /usr/local/
 
 WORKDIR /tmp
 
@@ -55,8 +67,6 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
 
 WORKDIR /home/application
 
-ENV APPLICATION_UID=$GIDUID \
-    APPLICATION_GID=$GIDUID
-RUN usermod -u $GIDUID application \
-    && groupmod -g $GIDUID application \
+RUN usermod -u $UID application \
+    && groupmod -g $UID application \
     && chown -R application: /home/application
