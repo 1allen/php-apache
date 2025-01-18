@@ -1,6 +1,7 @@
 FROM spritsail/debian-builder AS builder
 
-ARG IMAGEMAGICK_VERSION=7.1.1-41
+# https://github.com/ImageMagick/ImageMagick/releases
+ARG IMAGEMAGICK_VERSION=7.1.1-43
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MAKEFLAGS="-j$(nproc)"
@@ -30,6 +31,7 @@ FROM webdevops/php-apache:8.3
 
 ARG UID=1001
 ARG GID=1001
+# https://pecl.php.net/package/imagick/3.7.0
 ARG IMAGICK_VERSION=3.7.0
 
 ENV DEBIAN_FRONTEND=noninteractive
