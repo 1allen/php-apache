@@ -26,7 +26,7 @@ RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VER
 
 
 
-FROM webdevops/php-apache:8.3
+FROM webdevops/php-apache:8.4
 
 ARG UID=1001
 ARG GID=1001
