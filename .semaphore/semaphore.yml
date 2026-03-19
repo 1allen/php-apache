@@ -3,11 +3,11 @@ name: php-apache semaphore ci
 agent:
   machine:
     type: f1-standard-2
-    os_image: ubuntu2004
+    os_image: ubuntu2404
 blocks:
   - name: build
     skip:
-      when: "branch = 'master' OR branch =~ '^php'"
+      when: "branch = 'master'"
     task:
       prologue:
         commands:
@@ -18,7 +18,8 @@ blocks:
             - checkout
             - IMAGE_TAG=${SEMAPHORE_GIT_TAG_NAME:-$SEMAPHORE_GIT_BRANCH}
             - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
-            - docker build --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
+            - docker pull "$BUILDER_IMAGE" || true
+            - docker build --pull --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
             - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
             - docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
       secrets:
