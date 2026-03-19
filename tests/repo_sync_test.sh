@@ -59,4 +59,9 @@ if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     exit 1
 fi
 
+grep -q 'commit.gpgsign=false commit' "$SCRIPT_PATH" || {
+    echo "Expected repo_sync.sh to disable GPG signing for automation commits." >&2
+    exit 1
+}
+
 echo "repo_sync_test.sh: PASS"

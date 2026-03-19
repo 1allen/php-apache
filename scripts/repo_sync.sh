@@ -256,7 +256,7 @@ sync_shared_command() {
 
         if [[ $apply -eq 1 ]]; then
             git -C "$worktree" add "${changed_files[@]}"
-            git -C "$worktree" commit -m "$message" >/dev/null
+            git -C "$worktree" -c commit.gpgsign=false commit -m "$message" >/dev/null
             echo "$branch: committed shared-file sync."
         fi
 
@@ -321,7 +321,7 @@ bootstrap_version_command() {
     fi
 
     git -C "$worktree" add Dockerfile.ubuntu
-    git -C "$worktree" commit -m "chore: bootstrap $target_branch from $BOOTSTRAP_SOURCE_BRANCH" >/dev/null
+    git -C "$worktree" -c commit.gpgsign=false commit -m "chore: bootstrap $target_branch from $BOOTSTRAP_SOURCE_BRANCH" >/dev/null
     echo "Created $target_branch with a bootstrap commit."
 }
 
