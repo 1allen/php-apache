@@ -3,17 +3,18 @@
 # Function to convert branch name to tag name
 convert_branch_to_tag() {
     local branch_name="$1"
-    echo "${branch_name:3:1}.${branch_name:4}"
+    local version="${branch_name#php}" # Remove the 'php' prefix
+    echo "${version:0:1}.${version:1:1}" # Transform '81' to '8.1'
 }
 
-# Fetch latest changes from the remote
+# Fetch the latest changes from the remote
 git fetch --all
 
-# Save current branch we're in
+# Save the current branch we're on
 CURRENT_BRANCH=$(git branch | sed -n -e 's/^\* \(.*\)/\1/p')
 
-# Getting list of branches starting with 'php'
-BRANCHES=$(git branch -r | grep 'origin/php' | sed 's/origin\///')
+# Get the list of branches starting with 'php' but exclude 'latest'
+BRANCHES=$(git branch -r | grep 'origin/php' | grep -v 'origin/latest' | sed 's/origin\///')
 
 # Loop through each branch and update its tag
 for branch in $BRANCHES
@@ -26,13 +27,13 @@ do
     # Checkout the branch
     git checkout "$branch"
 
-    # Create a new tag or move the existing tag to the new HEAD
+    # Create a new tag or move the existing tag to the current HEAD
     git tag -f "$tag" HEAD
 
-    # Delete the tag from remote
+    # Delete the tag from the remote
     git push origin --delete "$tag"
 
-    # Push the tag to remote
+    # Push the tag to the remote
     git push origin "$tag"
 done
 
