@@ -7,7 +7,7 @@ agent:
 blocks:
   - name: build
     skip:
-      when: "branch = 'master' OR branch =~ '^php'"
+      when: "branch = 'master'"
     task:
       prologue:
         commands:

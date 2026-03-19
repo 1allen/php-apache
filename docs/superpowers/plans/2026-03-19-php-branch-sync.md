@@ -61,7 +61,7 @@ Expected: PASS
 - [ ] **Step 1: Update Semaphore image settings**
 
 Move off `ubuntu2004` and keep the pipeline behavior aligned with the current
-release flow.
+release flow, including php branch builds.
 
 - [ ] **Step 2: Add the sync/bootstrap script**
 

@@ -57,7 +57,9 @@ The script defaults to dry-run behavior and requires `--apply` for mutations.
 
 Refresh Semaphore to a supported Ubuntu image and keep the build logic aligned
 with the current tag/branch release flow. Small hygiene improvements should
-favor safety and transparency over introducing a more complex pipeline.
+favor safety and transparency over introducing a more complex pipeline. PHP
+version branches must keep building when they receive sync commits, otherwise
+the branch-per-version model loses its delivery path.
 
 ### Documentation
 
@@ -84,5 +86,6 @@ Update `README.md` with:
 - The repo documents how shared changes should be propagated.
 - Semaphore config no longer references `ubuntu2004`.
 - `latest` can target PHP `8.5`.
+- `phpXX` branches can trigger their own builds again.
 - A single command can show drift and optionally sync shared files across local
   PHP branches.

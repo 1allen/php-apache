@@ -14,6 +14,15 @@ steps can diverge by version.
 FYI the `latest` branch contains the latest changes, not necessarily the latest
 PHP branch history.
 
+## Build behavior
+
+- pushes to `latest` build the `latest` image tag
+- pushes to `phpXX` branches now build branch-specific image tags again
+- git tags such as `8.4` still build tag-specific images
+
+For PHP `8.5`, the Ubuntu Dockerfile now pins `imagick 3.8.1`, which is the
+first recent PECL release line compatible with PHP `8.5`.
+
 ## Maintenance commands
 
 Check the current repo and upstream state:
@@ -33,6 +42,9 @@ Apply that shared-file sync as branch-local commits:
 ```bash
 bash scripts/repo_sync.sh sync-shared --apply
 ```
+
+After syncing shared files into local `phpXX` branches, push those branches so
+Semaphore triggers the corresponding branch builds.
 
 Preview a new PHP branch bootstrap from `latest`:
 
