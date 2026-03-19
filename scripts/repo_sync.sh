@@ -93,6 +93,23 @@ print_section() {
     done
 }
 
+print_named_section() {
+    local title="$1"
+    local array_name="$2"
+    local array_length=0
+    local items=()
+
+    eval "array_length=\${#$array_name[@]}"
+
+    if [[ "$array_length" -eq 0 ]]; then
+        print_section "$title"
+        return
+    fi
+
+    eval "items=(\"\${$array_name[@]}\")"
+    print_section "$title" "${items[@]}"
+}
+
 load_upstream_branches() {
     if ! command -v curl >/dev/null 2>&1; then
         return
@@ -159,11 +176,11 @@ status_command() {
         [[ -n "$branch" ]] && upstream_branches+=("$branch")
     done < <(load_upstream_branches || true)
 
-    print_section "Configured PHP branches:" "${configured[@]}"
-    print_section "Local PHP branches:" "${local_branches[@]}"
-    print_section "Remote PHP branches:" "${remote_branches[@]}"
-    print_section "Configured branches missing locally:" "${missing_local[@]}"
-    print_section "Shared files:" "${SHARED_FILES[@]}"
+    print_named_section "Configured PHP branches:" configured
+    print_named_section "Local PHP branches:" local_branches
+    print_named_section "Remote PHP branches:" remote_branches
+    print_named_section "Configured branches missing locally:" missing_local
+    print_named_section "Shared files:" SHARED_FILES
 
     if [[ ${#upstream_branches[@]} -gt 0 ]]; then
         local upstream_missing=()
@@ -172,8 +189,8 @@ status_command() {
             branch_in_list "$branch" "${configured[@]}" || upstream_missing+=("$branch")
         done
 
-        print_section "Upstream PHP branches from Docker Hub:" "${upstream_branches[@]}"
-        print_section "Configured branches missing from manifest:" "${upstream_missing[@]}"
+        print_named_section "Upstream PHP branches from Docker Hub:" upstream_branches
+        print_named_section "Configured branches missing from manifest:" upstream_missing
     else
         echo "Upstream PHP branches from Docker Hub:"
         echo "  - unavailable (network or curl not available)"
@@ -318,7 +335,8 @@ bootstrap_version_command() {
     perl -0pi -e "s{FROM webdevops/php-apache:[0-9]+\\.[0-9]+}{FROM webdevops/php-apache:$php_version}" "$worktree/Dockerfile.ubuntu"
 
     if git -C "$worktree" diff --quiet -- Dockerfile.ubuntu; then
-        die "Bootstrapping $target_branch did not change Dockerfile.ubuntu."
+        echo "Created $target_branch at $BOOTSTRAP_SOURCE_BRANCH without an extra bootstrap commit; Dockerfile.ubuntu already targets PHP $php_version."
+        return 0
     fi
 
     git -C "$worktree" add Dockerfile.ubuntu

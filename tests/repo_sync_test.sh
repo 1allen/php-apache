@@ -19,6 +19,16 @@ assert_contains() {
     fi
 }
 
+assert_file_contains() {
+    local file_path="$1"
+    local pattern="$2"
+
+    grep -q "$pattern" "$file_path" || {
+        echo "Expected $file_path to contain: $pattern" >&2
+        exit 1
+    }
+}
+
 [[ -f "$MANIFEST_PATH" ]] || {
     echo "Missing manifest: $MANIFEST_PATH" >&2
     exit 1
@@ -40,33 +50,46 @@ assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
-assert_contains "$dry_run_output" "Dry run:"
 assert_contains "$dry_run_output" "php85"
 assert_contains "$dry_run_output" "Dockerfile.ubuntu"
 
-grep -q 'ARG IMAGICK_VERSION=3.8.1' "$DOCKERFILE_PATH" || {
-    echo "Expected Dockerfile.ubuntu to pin imagick 3.8.1 for PHP 8.5." >&2
+if [[ "$dry_run_output" != *"Dry run:"* && "$dry_run_output" != *"Local branch already exists: php85"* ]]; then
+    echo "Expected bootstrap dry run to report creation or an existing php85 branch." >&2
     exit 1
-}
+fi
 
-grep -q "when: \"branch = 'master'\"" "$SEMAPHORE_PATH" || {
-    echo "Expected Semaphore skip rule to only exclude master." >&2
-    exit 1
-}
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
+assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2
     exit 1
 fi
 
-grep -q 'commit.gpgsign=false commit' "$SCRIPT_PATH" || {
-    echo "Expected repo_sync.sh to disable GPG signing for automation commits." >&2
-    exit 1
-}
+assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
+assert_file_contains "$SCRIPT_PATH" 'worktree prune'
 
-grep -q 'worktree prune' "$SCRIPT_PATH" || {
-    echo "Expected repo_sync.sh to prune stale worktrees before syncing." >&2
-    exit 1
-}
+TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
+trap 'rm -rf "$TMP_REPO"' EXIT
+
+mkdir -p "$TMP_REPO/scripts" "$TMP_REPO/config"
+cp "$SCRIPT_PATH" "$TMP_REPO/scripts/repo_sync.sh"
+cp "$MANIFEST_PATH" "$TMP_REPO/config/php-branches.conf"
+cp "$DOCKERFILE_PATH" "$TMP_REPO/Dockerfile.ubuntu"
+chmod +x "$TMP_REPO/scripts/repo_sync.sh"
+
+(
+    cd "$TMP_REPO"
+    git init -b latest >/dev/null 2>&1
+    git config user.email "repo-sync-test@example.com"
+    git config user.name "Repo Sync Test"
+    git add .
+    git -c commit.gpgsign=false commit -m "test seed" >/dev/null
+
+    bootstrap_apply_output="$(bash scripts/repo_sync.sh bootstrap-version php85 --apply)"
+    assert_contains "$bootstrap_apply_output" "Target branch: php85"
+    assert_contains "$bootstrap_apply_output" "Created php85"
+    git show-ref --verify --quiet refs/heads/php85
+)
 
 echo "repo_sync_test.sh: PASS"
