@@ -64,4 +64,9 @@ grep -q 'commit.gpgsign=false commit' "$SCRIPT_PATH" || {
     exit 1
 }
 
+grep -q 'worktree prune' "$SCRIPT_PATH" || {
+    echo "Expected repo_sync.sh to prune stale worktrees before syncing." >&2
+    exit 1
+}
+
 echo "repo_sync_test.sh: PASS"

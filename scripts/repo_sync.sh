@@ -112,6 +112,7 @@ load_upstream_branches() {
 
 prepare_temp_root() {
     [[ -n "${TMP_WORK_ROOT:-}" ]] && return
+    git -C "$ROOT_DIR" worktree prune >/dev/null 2>&1 || true
     TMP_WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/php-apache-sync.XXXXXX")"
 }
 
