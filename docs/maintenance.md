@@ -134,20 +134,25 @@ the downstream Dockerfile so this base image stays broadly reusable.
 
 1. Make shared changes on `latest`.
 2. Confirm shared files are listed in `config/php-branches.conf`.
-3. Preview branch drift:
+3. If `Dockerfile.ubuntu` changes, apply the same Dockerfile behavior to each
+   `phpXX` branch intentionally. `Dockerfile.ubuntu` is not a shared file
+   because each branch can carry a different `FROM webdevops/php-apache:X.Y`
+   and extension compatibility pin.
+4. Preview branch drift:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared
    ```
 
-4. Apply branch-local sync commits:
+5. Apply branch-local sync commits:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared --apply
    ```
 
-5. Push the updated PHP branches so Semaphore builds branch-specific image tags.
-6. Preview and apply Docker tag updates when needed:
+6. Push the updated PHP branches so Semaphore builds branch-specific image tags.
+7. Preview and apply Docker tag updates when users consume semver image tags
+   such as `1allen/php-apache:8.2`:
 
    ```bash
    bash scripts/tags_update.sh
