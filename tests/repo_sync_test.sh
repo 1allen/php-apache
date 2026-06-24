@@ -48,6 +48,8 @@ status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
+assert_contains "$status_output" "AGENTS.md"
+assert_contains "$status_output" "docs/maintenance.md"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -59,6 +61,10 @@ if [[ "$dry_run_output" != *"Dry run:"* && "$dry_run_output" != *"Local branch a
 fi
 
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
+assert_file_contains "$DOCKERFILE_PATH" 'ghcr.io/mlocati/php-extension-installer:latest'
+assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
+assert_file_contains "$DOCKERFILE_PATH" 'install-php-extensions gmp'
 assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
