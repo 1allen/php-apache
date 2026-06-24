@@ -1,6 +1,8 @@
-FROM spritsail/debian-builder AS builder
+FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
 
-ARG IMAGEMAGICK_VERSION=7.1.1-41
+FROM spritsail/debian-builder AS imagemagick-builder
+
+ARG IMAGEMAGICK_VERSION=7.1.2-26
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MAKEFLAGS="-j$(nproc)"
@@ -10,7 +12,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests \
     libwebp-dev \
     libmagickwand-dev
-RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/{$IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
+RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
     && tar zxf imagemagick.tar.gz \
     && rm imagemagick.tar.gz \
     && cd ImageMagick-$IMAGEMAGICK_VERSION \
@@ -37,7 +39,8 @@ ENV MAKEFLAGS="-j$(nproc)"
 ENV APPLICATION_UID=$UID
 ENV APPLICATION_GID=$GID
 
-COPY --chown=$UID:$GID --from=builder /tmp/imgck/ /usr/local/
+COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/ /usr/local/
+COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 WORKDIR /tmp
 
@@ -48,11 +51,11 @@ RUN apt-get update \
     webp \
     ffmpeg \
     libxt6 \
-    libgmp-dev \
     libmagickwand-dev
 
-RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
-    && curl -L https://pecl.php.net/get/imagick-{$IMAGICK_VERSION}.tgz -o imagick.tgz \
+RUN ldconfig /usr/local/lib \
+    && install-php-extensions gmp \
+    && curl -L https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz -o imagick.tgz \
     && tar xf imagick.tgz \
     && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
     && docker-php-ext-configure imagick \
@@ -61,7 +64,7 @@ RUN docker-php-ext-configure gmp && docker-php-ext-install gmp \
 ##
     && ldconfig /usr/local/lib \
 ##
-    && apt-get purge -y libmagickwand-dev libgmp-dev && apt-get autoremove -y --purge \
+    && apt-get purge -y libmagickwand-dev && apt-get autoremove -y --purge \
     && docker-image-cleanup
 
 WORKDIR /home/application
