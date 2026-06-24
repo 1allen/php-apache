@@ -80,6 +80,14 @@ tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
 assert_contains "$tooling_output" "latest: ok"
 
+supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling)"
+assert_contains "$supported_tooling_output" "php80: ok"
+assert_contains "$supported_tooling_output" "php85: ok"
+
+legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling --legacy || true)"
+assert_contains "$legacy_tooling_output" "php73"
+assert_contains "$legacy_tooling_output" "php74"
+
 TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
 trap 'rm -rf "$TMP_REPO"' EXIT
 

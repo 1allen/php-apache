@@ -140,7 +140,7 @@ the downstream Dockerfile so this base image stays broadly reusable.
    because each branch can carry a different `FROM webdevops/php-apache:X.Y`
    and extension compatibility pin.
 4. Verify every committed branch Dockerfile still exposes the expected
-   downstream image tooling:
+   downstream image tooling for supported branches:
 
    ```bash
    bash scripts/repo_sync.sh verify-image-tooling
@@ -148,7 +148,10 @@ the downstream Dockerfile so this base image stays broadly reusable.
 
    This guard exists because documentation on `latest` can advertise a
    downstream customization feature before the semver branches actually include
-   the Dockerfile support for it.
+   the Dockerfile support for it. Legacy branches `php73` and `php74` are
+   tracked but are not part of the default supported-image guarantee; check
+   them explicitly with `bash scripts/repo_sync.sh verify-image-tooling --legacy`
+   when changing legacy images.
 5. Preview branch drift:
 
    ```bash

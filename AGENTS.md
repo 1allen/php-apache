@@ -44,6 +44,9 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
   behavior updates. This catches the failure mode where README examples mention
   a downstream customization feature but semver branches such as `php82` do not
   actually include it in their committed Dockerfiles.
+- `verify-image-tooling` checks `latest` plus supported branches by default.
+  Legacy branches `php73` and `php74` are opt-in with
+  `bash scripts/repo_sync.sh verify-image-tooling --legacy`.
 - If the base PHP minor changes, update only the `FROM webdevops/php-apache:X.Y`
   line on the corresponding `phpXX` branch unless shared behavior also changed.
 
@@ -54,8 +57,8 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
    upstreams support the target PHP version.
 3. Keep `install-php-extensions` in `/usr/local/bin`.
 4. Run `bash tests/repo_sync_test.sh`.
-5. For image behavior changes, verify the matching `phpXX` branches include the
-   Dockerfile update before pushing semver tags such as `8.2`.
+5. For image behavior changes, verify the matching supported `phpXX` branches
+   include the Dockerfile update before pushing semver tags such as `8.2`.
 6. Run `bash scripts/repo_sync.sh verify-image-tooling`.
 7. If Docker is available, run a local image build and verify:
 

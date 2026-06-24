@@ -26,7 +26,7 @@ usage() {
 Usage:
   bash scripts/repo_sync.sh status
   bash scripts/repo_sync.sh sync-shared [--apply] [branch...]
-  bash scripts/repo_sync.sh verify-image-tooling [branch...]
+  bash scripts/repo_sync.sh verify-image-tooling [--legacy|--all] [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
 Commands:
@@ -35,8 +35,9 @@ Commands:
   sync-shared        Sync shared files from the source branch into local PHP branches.
                      Dry-run by default. Use --apply to create branch-local commits.
   verify-image-tooling
-                     Check that branch Dockerfiles include the shared image tooling
-                     expected by downstream custom images.
+                     Check that supported branch Dockerfiles include the image
+                     tooling expected by downstream custom images.
+                     Use --legacy to include legacy branches or --all for both.
   bootstrap-version  Create a new local PHP branch from the source branch and rewrite
                      Dockerfile.ubuntu to the requested PHP version. Dry-run by default.
 EOF
@@ -292,6 +293,8 @@ sync_shared_command() {
 
 verify_image_tooling_command() {
     local target_branches=()
+    local include_legacy=0
+    local include_supported=1
     local branch
     local dockerfile_content
     local marker
@@ -306,15 +309,32 @@ verify_image_tooling_command() {
     )
 
     while [[ $# -gt 0 ]]; do
-        target_branches+=("$1")
+        case "$1" in
+            --legacy)
+                include_supported=0
+                include_legacy=1
+                ;;
+            --all)
+                include_supported=1
+                include_legacy=1
+                ;;
+            *)
+                target_branches+=("$1")
+                ;;
+        esac
         shift
     done
 
     if [[ ${#target_branches[@]} -eq 0 ]]; then
         target_branches+=("$BOOTSTRAP_SOURCE_BRANCH")
-        while IFS= read -r branch; do
-            [[ -n "$branch" ]] && target_branches+=("$branch")
-        done < <(all_configured_branches)
+
+        if [[ $include_supported -eq 1 ]]; then
+            target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
+        fi
+
+        if [[ $include_legacy -eq 1 ]]; then
+            target_branches+=("${LEGACY_PHP_BRANCHES[@]}")
+        fi
     fi
 
     print_section "Image tooling branches:" "${target_branches[@]}"
