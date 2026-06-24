@@ -36,6 +36,10 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 - `imagick` is intentionally installed manually from PECL after the custom
   ImageMagick build is copied into `/usr/local` and `ldconfig /usr/local/lib`
   has run.
+- `Dockerfile.ubuntu` is not part of shared-file sync. When image behavior
+  changes on `latest`, apply the equivalent Dockerfile update to each `phpXX`
+  branch while preserving that branch's `FROM webdevops/php-apache:X.Y` line
+  and extension compatibility pins.
 - If the base PHP minor changes, update only the `FROM webdevops/php-apache:X.Y`
   line on the corresponding `phpXX` branch unless shared behavior also changed.
 
@@ -46,7 +50,9 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
    upstreams support the target PHP version.
 3. Keep `install-php-extensions` in `/usr/local/bin`.
 4. Run `bash tests/repo_sync_test.sh`.
-5. If Docker is available, run a local image build and verify:
+5. For image behavior changes, verify the matching `phpXX` branches include the
+   Dockerfile update before pushing semver tags such as `8.2`.
+6. If Docker is available, run a local image build and verify:
 
    ```bash
    docker build --pull -f Dockerfile.ubuntu -t php-apache:local .
@@ -54,7 +60,7 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
    docker run --rm php-apache:local command -v install-php-extensions
    ```
 
-6. Sync shared-file changes into PHP branches with:
+7. Sync shared-file changes into PHP branches with:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared
