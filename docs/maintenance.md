@@ -78,6 +78,7 @@ After updating versions, run:
 
 ```bash
 bash tests/repo_sync_test.sh
+bash scripts/repo_sync.sh verify-image-tooling
 docker build --pull -f Dockerfile.ubuntu -t php-apache:local .
 ```
 
@@ -138,20 +139,30 @@ the downstream Dockerfile so this base image stays broadly reusable.
    `phpXX` branch intentionally. `Dockerfile.ubuntu` is not a shared file
    because each branch can carry a different `FROM webdevops/php-apache:X.Y`
    and extension compatibility pin.
-4. Preview branch drift:
+4. Verify every committed branch Dockerfile still exposes the expected
+   downstream image tooling:
+
+   ```bash
+   bash scripts/repo_sync.sh verify-image-tooling
+   ```
+
+   This guard exists because documentation on `latest` can advertise a
+   downstream customization feature before the semver branches actually include
+   the Dockerfile support for it.
+5. Preview branch drift:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared
    ```
 
-5. Apply branch-local sync commits:
+6. Apply branch-local sync commits:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared --apply
    ```
 
-6. Push the updated PHP branches so Semaphore builds branch-specific image tags.
-7. Preview and apply Docker tag updates when users consume semver image tags
+7. Push the updated PHP branches so Semaphore builds branch-specific image tags.
+8. Preview and apply Docker tag updates when users consume semver image tags
    such as `1allen/php-apache:8.2`:
 
    ```bash

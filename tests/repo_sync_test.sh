@@ -74,6 +74,11 @@ fi
 
 assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
 assert_file_contains "$SCRIPT_PATH" 'worktree prune'
+assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
+
+tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
+assert_contains "$tooling_output" "Image tooling branches:"
+assert_contains "$tooling_output" "latest: ok"
 
 TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
 trap 'rm -rf "$TMP_REPO"' EXIT

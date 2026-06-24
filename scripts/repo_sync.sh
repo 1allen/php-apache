@@ -26,6 +26,7 @@ usage() {
 Usage:
   bash scripts/repo_sync.sh status
   bash scripts/repo_sync.sh sync-shared [--apply] [branch...]
+  bash scripts/repo_sync.sh verify-image-tooling [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
 Commands:
@@ -33,6 +34,9 @@ Commands:
                      and advisory upstream Docker Hub tags.
   sync-shared        Sync shared files from the source branch into local PHP branches.
                      Dry-run by default. Use --apply to create branch-local commits.
+  verify-image-tooling
+                     Check that branch Dockerfiles include the shared image tooling
+                     expected by downstream custom images.
   bootstrap-version  Create a new local PHP branch from the source branch and rewrite
                      Dockerfile.ubuntu to the requested PHP version. Dry-run by default.
 EOF
@@ -286,6 +290,71 @@ sync_shared_command() {
     fi
 }
 
+verify_image_tooling_command() {
+    local target_branches=()
+    local branch
+    local dockerfile_content
+    local marker
+    local missing_markers=()
+    local failed=0
+    local required_markers=(
+        'FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer'
+        'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
+        'install-php-extensions gmp'
+        'https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz'
+        'https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz'
+    )
+
+    while [[ $# -gt 0 ]]; do
+        target_branches+=("$1")
+        shift
+    done
+
+    if [[ ${#target_branches[@]} -eq 0 ]]; then
+        target_branches+=("$BOOTSTRAP_SOURCE_BRANCH")
+        while IFS= read -r branch; do
+            [[ -n "$branch" ]] && target_branches+=("$branch")
+        done < <(all_configured_branches)
+    fi
+
+    print_section "Image tooling branches:" "${target_branches[@]}"
+
+    for branch in "${target_branches[@]}"; do
+        missing_markers=()
+
+        if ! branch_exists_local "$branch"; then
+            echo "$branch: missing local branch."
+            failed=1
+            continue
+        fi
+
+        if ! dockerfile_content="$(git -C "$ROOT_DIR" show "$branch:Dockerfile.ubuntu" 2>/dev/null)"; then
+            echo "$branch: missing Dockerfile.ubuntu."
+            failed=1
+            continue
+        fi
+
+        for marker in "${required_markers[@]}"; do
+            if [[ "$dockerfile_content" != *"$marker"* ]]; then
+                missing_markers+=("$marker")
+            fi
+        done
+
+        if [[ ${#missing_markers[@]} -eq 0 ]]; then
+            echo "$branch: ok"
+            continue
+        fi
+
+        failed=1
+        echo "$branch: missing required image tooling markers:"
+        for marker in "${missing_markers[@]}"; do
+            echo "  - $marker"
+        done
+    done
+
+    return "$failed"
+}
+
 bootstrap_version_command() {
     local target_branch="${1:-}"
     local apply=0
@@ -355,6 +424,10 @@ main() {
         sync-shared)
             shift || true
             sync_shared_command "$@"
+            ;;
+        verify-image-tooling)
+            shift || true
+            verify_image_tooling_command "$@"
             ;;
         bootstrap-version)
             shift || true
