@@ -1,32 +1,39 @@
-FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
+# syntax=docker/dockerfile:1
+
+FROM mlocati/php-extension-installer:latest AS php-extension-installer
 
 FROM spritsail/debian-builder AS imagemagick-builder
 
 # https://github.com/ImageMagick/ImageMagick/releases
 ARG IMAGEMAGICK_VERSION=7.1.2-26
+ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb
+ARG DEBIAN_FRONTEND=noninteractive
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV MAKEFLAGS="-j$(nproc)"
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        ca-certificates \
+        curl \
+        libwebp-dev \
+        libmagickwand-dev; \
+    rm -rf /var/lib/apt/lists/*
 
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests \
-    libwebp-dev \
-    libmagickwand-dev
-RUN curl -L https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz -o imagemagick.tar.gz \
-    && tar zxf imagemagick.tar.gz \
-    && rm imagemagick.tar.gz \
-    && cd ImageMagick-$IMAGEMAGICK_VERSION \
-    && ./configure \
+RUN set -eux; \
+    curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15 \
+        "https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz" \
+        -o imagemagick.tar.gz; \
+    printf '%s  %s\n' "$IMAGEMAGICK_SHA256" imagemagick.tar.gz | sha256sum -c -; \
+    tar zxf imagemagick.tar.gz; \
+    rm imagemagick.tar.gz; \
+    cd "ImageMagick-$IMAGEMAGICK_VERSION"; \
+    ./configure \
         --disable-docs \
         --without-magick-plus-plus \
         --with-webp \
-        --enable-symbol-prefix \
-        --prefix=/tmp/imgck \
-        --exec-prefix=/usr/local \
-    && make -j$(nproc) \
-    && make install
-
+        --prefix=/usr/local; \
+    make -j"$(nproc)"; \
+    make install DESTDIR=/tmp/imgck; \
+    find /tmp/imgck/usr/local/lib -type f \( -name '*.a' -o -name '*.la' \) -delete
 
 
 FROM webdevops/php-apache:8.3
@@ -35,42 +42,61 @@ ARG UID=1001
 ARG GID=1001
 # https://pecl.php.net/package/imagick/3.7.0
 ARG IMAGICK_VERSION=3.7.0
+ARG IMAGICK_SHA256=5a364354109029d224bcbb2e82e15b248be9b641227f45e63425c06531792d3e
+ARG DEBIAN_FRONTEND=noninteractive
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV MAKEFLAGS="-j$(nproc)"
-ENV APPLICATION_UID=$UID
-ENV APPLICATION_GID=$GID
+ENV APPLICATION_UID=${UID} \
+    APPLICATION_GID=${GID} \
+    PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
-COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/ /usr/local/
+COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/
 COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 WORKDIR /tmp
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests \
-    jpegoptim \
-    mariadb-client \
-    webp \
-    ffmpeg \
-    libxt6 \
-    libmagickwand-dev
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends --no-install-suggests \
+        ca-certificates \
+        curl \
+        jpegoptim \
+        mariadb-client \
+        webp \
+        ffmpeg \
+        libxt6 \
+        libmagickwand-dev; \
+    rm -rf /var/lib/apt/lists/*
 
-RUN ldconfig /usr/local/lib \
-    && install-php-extensions gmp \
-    && curl -L https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz -o imagick.tgz \
-    && tar xf imagick.tgz \
-    && mkdir -p /usr/src/php/ext/imagick && mv imagick-$IMAGICK_VERSION/* /usr/src/php/ext/imagick \
-    && docker-php-ext-configure imagick \
-    && docker-php-ext-install -j$(nproc) imagick \
-    && rm imagick.tgz \
-##
-    && ldconfig /usr/local/lib \
-##
-    && apt-get purge -y libmagickwand-dev && apt-get autoremove -y --purge \
-    && docker-image-cleanup
+RUN set -eux; \
+    ldconfig /usr/local/lib; \
+    ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini; \
+    if [ -f "$ioncube_ini" ]; then \
+        ioncube_loader="$(awk -F= '/zend_extension/ {gsub(/[[:space:]]/, "", $2); print $2}' "$ioncube_ini")"; \
+        if [ -n "$ioncube_loader" ] && { [ ! -e "$ioncube_loader" ] || ! ldd "$ioncube_loader" >/dev/null 2>&1; }; then \
+            rm -f "$ioncube_ini"; \
+        fi; \
+    fi; \
+    export MAKEFLAGS="-j$(nproc)"; \
+    install-php-extensions gmp; \
+    curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15 \
+        "https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz" \
+        -o imagick.tgz; \
+    printf '%s  %s\n' "$IMAGICK_SHA256" imagick.tgz | sha256sum -c -; \
+    tar zxf imagick.tgz; \
+    mkdir -p /usr/src/php/ext/imagick; \
+    mv "imagick-$IMAGICK_VERSION"/* /usr/src/php/ext/imagick; \
+    docker-php-ext-configure imagick --with-imagick=/usr/local; \
+    docker-php-ext-install -j"$(nproc)" imagick; \
+    rm -rf imagick.tgz "imagick-$IMAGICK_VERSION"; \
+    ldconfig /usr/local/lib; \
+    apt-get purge -y libmagickwand-dev; \
+    apt-get autoremove -y --purge; \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*; \
+    docker-image-cleanup
 
 WORKDIR /home/application
 
-RUN usermod -u $UID application \
-    && groupmod -g $UID application \
-    && chown -R application: /home/application
+RUN set -eux; \
+    usermod -u "$UID" application; \
+    groupmod -g "$GID" application; \
+    chown -R application: /home/application
