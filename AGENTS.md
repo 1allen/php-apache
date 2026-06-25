@@ -11,17 +11,24 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 - Keep `AGENTS.md`, `README.md`, `docs/maintenance.md`, scripts, config, and
   CI changes in `SHARED_FILES` when they should propagate to PHP version
   branches.
-- Do not replace the manual `imagick` build with `install-php-extensions
-  imagick` unless you have verified that the extension links against the custom
-  ImageMagick under `/usr/local`.
+- Keep `.dockerignore` in `SHARED_FILES`; the image does not copy repository
+  files, so docs, tests, scripts, agent state, and Git metadata should stay out
+  of the Docker build context.
+- Treat `php73` and `php74` as deprecated/frozen. Do not sync shared files,
+  update Dockerfile behavior, or move PHP 7 tags unless the user explicitly asks
+  for a critical emergency fix.
+- `imagick` is a bundled feature of this image. Do not replace the explicit
+  PECL `imagick` build with `install-php-extensions imagick` unless you have
+  verified that the extension still ships by default and links against the
+  custom ImageMagick under `/usr/local`.
 
 ## Dockerfile Rules
 
 - `Dockerfile.ubuntu` is the maintained image path.
-- The first stage copies `/usr/bin/install-php-extensions` from
-  `ghcr.io/mlocati/php-extension-installer:latest` into the final image. Keep
-  that binary in the final image so downstream images can install more
-  extensions without fetching the installer again.
+- The first stage copies `/usr/bin/install-php-extensions` from the public
+  `mlocati/php-extension-installer:latest` image into the final image. Keep that
+  binary in the final image so downstream images can install more extensions
+  without fetching the installer again.
 - Prefer `install-php-extensions` for ordinary extensions and downstream image
   customization, for example:
 
@@ -33,9 +40,20 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 - When documenting downstream `grpc`, `redis`, or `protobuf` customization,
   show `install-php-extensions` as the preferred path. Keep manual `pecl
   install` examples only as legacy or troubleshooting context.
-- `imagick` is intentionally installed manually from PECL after the custom
-  ImageMagick build is copied into `/usr/local` and `ldconfig /usr/local/lib`
-  has run.
+- `imagick` is intentionally bundled by building the pinned PECL source after
+  the custom ImageMagick build is copied into `/usr/local` and
+  `ldconfig /usr/local/lib` has run.
+- Keep `docker-php-ext-configure imagick --with-imagick=/usr/local`; without
+  this, the build can silently link against Debian ImageMagick 6 packages.
+- Keep SHA-256 verification on downloaded ImageMagick and PECL `imagick`
+  archives. When version pins change, update the matching checksum in the same
+  Dockerfile change.
+- Keep `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` or equivalent configure-time
+  pathing so `imagick` prefers the custom ImageMagick under `/usr/local`.
+- Preserve BuildKit inline cache settings in Semaphore unless replacing them
+  with an equivalent or better cache strategy. PR branches and `latest` should
+  build only; Docker Hub publishing should stay limited to `phpXX` branches and
+  git tags.
 - `Dockerfile.ubuntu` is not part of shared-file sync. When image behavior
   changes on `latest`, apply the equivalent Dockerfile update to each `phpXX`
   branch while preserving that branch's `FROM webdevops/php-apache:X.Y` line
@@ -47,6 +65,8 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 - `verify-image-tooling` checks `latest` plus supported branches by default.
   Legacy branches `php73` and `php74` are opt-in with
   `bash scripts/repo_sync.sh verify-image-tooling --legacy`.
+- `sync-shared` and `scripts/tags_update.sh` also skip legacy PHP 7 branches by
+  default. Use `--legacy` only for critical emergency maintenance.
 - If the base PHP minor changes, update only the `FROM webdevops/php-apache:X.Y`
   line on the corresponding `phpXX` branch unless shared behavior also changed.
 
