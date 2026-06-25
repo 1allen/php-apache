@@ -20,7 +20,8 @@ steps can diverge by version.
 
 - `latest`: integration branch for shared repo changes
 - `php80`-`php85`: actively supported version branches
-- `php73`-`php74`: legacy version branches still tracked in the manifest
+- `php73`-`php74`: deprecated/frozen version branches, kept only for critical
+  emergency maintenance
 
 FYI the `latest` branch contains the latest changes, not necessarily the latest
 PHP branch history.
@@ -30,6 +31,8 @@ PHP branch history.
 - pushes to `latest` build the `latest` image tag
 - pushes to `phpXX` branches now build branch-specific image tags again
 - git tags such as `8.4` still build tag-specific images
+- Semaphore uses BuildKit inline cache metadata and pulls both the target tag
+  and `latest` as cache sources before building
 
 For PHP `8.5`, the Ubuntu Dockerfile now pins `imagick 3.8.1`, which is the
 first recent PECL release line compatible with PHP `8.5`.
@@ -45,6 +48,10 @@ RUN install-php-extensions protobuf grpc redis
 
 `imagick` remains a manual PECL build in this repository so it links against the
 custom ImageMagick installed under `/usr/local`.
+
+Source downloads for ImageMagick and PECL `imagick` are SHA-256 verified in the
+Dockerfile. When either version pin changes, update the matching checksum in the
+same change.
 
 For the common local customization case that previously looked like this:
 
@@ -74,7 +81,7 @@ Check the current repo and upstream state:
 bash scripts/repo_sync.sh status
 ```
 
-Preview shared-file drift from `latest` into all local PHP branches:
+Preview shared-file drift from `latest` into supported local PHP branches:
 
 ```bash
 bash scripts/repo_sync.sh sync-shared
@@ -86,8 +93,12 @@ Apply that shared-file sync as branch-local commits:
 bash scripts/repo_sync.sh sync-shared --apply
 ```
 
-After syncing shared files into local `phpXX` branches, push those branches so
-Semaphore triggers the corresponding branch builds.
+`sync-shared` targets supported PHP branches by default. Deprecated PHP 7
+branches are skipped unless you pass explicit branch names or use
+`--legacy`/`--all` for critical maintenance.
+
+After syncing shared files into local supported `phpXX` branches, push those
+branches so Semaphore triggers the corresponding branch builds.
 
 Preview a new PHP branch bootstrap from `latest`:
 
@@ -113,6 +124,10 @@ Push those tag updates:
 bash scripts/tags_update.sh --apply
 ```
 
+Tag updates also target supported PHP branches by default. Deprecated PHP 7 tags
+are left in place unless you deliberately run `bash scripts/tags_update.sh
+--legacy --apply`.
+
 Run the local repository test after changing Dockerfiles, scripts, config, or
 shared documentation:
 
@@ -120,13 +135,26 @@ shared documentation:
 bash tests/repo_sync_test.sh
 ```
 
+For image behavior changes, also verify that the supported PHP branches still
+carry the required Dockerfile tooling:
+
+```bash
+bash scripts/repo_sync.sh verify-image-tooling
+```
+
 ## LLM / automation notes
 
 - Treat `config/php-branches.conf` as the source of truth for supported branches
   and shared files.
 - Keep `AGENTS.md` and `docs/maintenance.md` in sync with Dockerfile behavior.
+- Keep `.dockerignore` in shared-file sync so CI build contexts stay small on
+  every PHP branch.
+- Preserve SHA-256 verification for ImageMagick and PECL `imagick` downloads.
 - Put shared maintenance changes on `latest` first, then use
   `bash scripts/repo_sync.sh sync-shared` to preview branch drift.
+- Treat `php73` and `php74` as deprecated/frozen. Do not sync shared files,
+  update tags, or refresh Dockerfile behavior there unless the change is a
+  critical emergency fix.
 - Use `bootstrap-version` when upstream adds a new PHP minor tag so the repo has
   a predictable, reviewable starting point for that branch.
 - Remote checks in `status` are advisory; the manifest stays authoritative if a

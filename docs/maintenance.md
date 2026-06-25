@@ -22,8 +22,19 @@ As of 2026-06-24:
   `Dockerfile.ubuntu`.
 - ImageMagick is pinned to `7.1.2-26`.
 - PECL `imagick` is pinned to `3.8.1`.
+- ImageMagick and PECL `imagick` source archives are verified with SHA-256
+  checksums in `Dockerfile.ubuntu`.
 - `install-php-extensions` is copied from
-  `ghcr.io/mlocati/php-extension-installer:latest` into `/usr/local/bin`.
+  `mlocati/php-extension-installer:latest` into `/usr/local/bin`.
+- CI enables BuildKit inline cache metadata and uses both the target image tag
+  and `latest` as cache sources.
+- `.dockerignore` intentionally keeps repo docs, tests, scripts, local agent
+  state, and Git metadata out of the Docker build context because the image does
+  not copy files from the repository.
+- PHP 7 branches (`php73`, `php74`) are deprecated/frozen. They remain available
+  for existing consumers, but normal shared-file sync, Dockerfile behavior
+  updates, and tag movement should skip them unless a critical emergency fix
+  requires an explicit opt-in.
 
 ## Why Imagick Is Manual
 
@@ -40,6 +51,8 @@ For that reason:
 - keep PECL `imagick` installation explicit unless you verify the linked
   libraries with `ldd`;
 - run `ldconfig /usr/local/lib` before and after compiling `imagick`.
+- configure `imagick` with `--with-imagick=/usr/local` so it uses the copied
+  custom ImageMagick build instead of Debian's ImageMagick packages.
 
 Useful verification commands after a build:
 
@@ -74,12 +87,23 @@ curl -fsSL 'https://hub.docker.com/v2/namespaces/webdevops/repositories/php-apac
   | grep -E '^[0-9]+\.[0-9]+$'
 ```
 
+Checksum update helpers for the currently pinned source archives:
+
+```bash
+IMAGEMAGICK_VERSION=7.1.2-26
+IMAGICK_VERSION=3.8.1
+curl -fsSL "https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz" \
+  | shasum -a 256
+curl -fsSL "https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz" \
+  | shasum -a 256
+```
+
 After updating versions, run:
 
 ```bash
 bash tests/repo_sync_test.sh
 bash scripts/repo_sync.sh verify-image-tooling
-docker build --pull -f Dockerfile.ubuntu -t php-apache:local .
+DOCKER_BUILDKIT=1 docker build --pull -f Dockerfile.ubuntu -t php-apache:local .
 ```
 
 If the local Docker build is not practical, still run the shell test and review
@@ -135,6 +159,7 @@ the downstream Dockerfile so this base image stays broadly reusable.
 
 1. Make shared changes on `latest`.
 2. Confirm shared files are listed in `config/php-branches.conf`.
+   `.dockerignore` is shared so build-context hygiene stays consistent.
 3. If `Dockerfile.ubuntu` changes, apply the same Dockerfile behavior to each
    `phpXX` branch intentionally. `Dockerfile.ubuntu` is not a shared file
    because each branch can carry a different `FROM webdevops/php-apache:X.Y`
@@ -152,7 +177,7 @@ the downstream Dockerfile so this base image stays broadly reusable.
    tracked but are not part of the default supported-image guarantee; check
    them explicitly with `bash scripts/repo_sync.sh verify-image-tooling --legacy`
    when changing legacy images.
-5. Preview branch drift:
+5. Preview branch drift across supported PHP branches:
 
    ```bash
    bash scripts/repo_sync.sh sync-shared
@@ -164,6 +189,14 @@ the downstream Dockerfile so this base image stays broadly reusable.
    bash scripts/repo_sync.sh sync-shared --apply
    ```
 
+   Deprecated PHP 7 branches are skipped by default. For a critical emergency
+   fix only, target them explicitly, for example:
+
+   ```bash
+   bash scripts/repo_sync.sh sync-shared --legacy
+   bash scripts/repo_sync.sh sync-shared --legacy --apply
+   ```
+
 7. Push the updated PHP branches so Semaphore builds branch-specific image tags.
 8. Preview and apply Docker tag updates when users consume semver image tags
    such as `1allen/php-apache:8.2`:
@@ -172,3 +205,36 @@ the downstream Dockerfile so this base image stays broadly reusable.
    bash scripts/tags_update.sh
    bash scripts/tags_update.sh --apply
    ```
+
+   This updates supported PHP tags only. Deprecated PHP 7 tags are intentionally
+   left where they are unless you run `bash scripts/tags_update.sh --legacy
+   --apply` for a critical emergency fix.
+
+## Reviewing Multi-Branch Changes
+
+Keep `latest` as the main review surface for shared files. Review branch-local
+Dockerfile changes separately because each `phpXX` branch can preserve a
+different base PHP minor or extension compatibility pin.
+
+Useful local review commands:
+
+```bash
+git status --short --branch
+git diff --stat
+git diff
+for branch in php80 php81 php82 php83 php84 php85; do
+  git log --oneline -1 "$branch"
+  git diff "origin/$branch..$branch" -- Dockerfile.ubuntu
+done
+```
+
+Before pushing, run:
+
+```bash
+bash tests/repo_sync_test.sh
+bash scripts/repo_sync.sh verify-image-tooling
+```
+
+Push `latest` first for shared-file review, then push the supported `phpXX`
+branches that carry Dockerfile commits. Leave `php73` and `php74` untouched
+unless the change is a critical emergency fix.
