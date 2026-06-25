@@ -7,11 +7,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/config/php-branches.conf"
 
 DRY_RUN=1
+INCLUDE_LEGACY=0
 
 convert_branch_to_tag() {
     local branch_name="$1"
     local version="${branch_name#php}"
-    echo "${version:0:1}.${version:1:1}"
+    echo "${version:0:1}.${version:1}"
 }
 
 run_cmd() {
@@ -26,11 +27,14 @@ run_cmd() {
 usage() {
     cat <<'EOF'
 Usage:
-  bash scripts/tags_update.sh
-  bash scripts/tags_update.sh --apply
+  bash scripts/tags_update.sh [--legacy]
+  bash scripts/tags_update.sh --apply [--legacy]
 
-By default this prints the tag actions it would take for the configured PHP
-branches that exist on origin. Use --apply to push the tag updates.
+By default this prints the tag actions it would take for supported PHP branches
+that exist on origin. Use --apply to push the tag updates.
+
+Deprecated PHP 7 branches are intentionally skipped unless --legacy is provided
+for critical maintenance.
 EOF
 }
 
@@ -38,6 +42,9 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --apply)
             DRY_RUN=0
+            ;;
+        --legacy)
+            INCLUDE_LEGACY=1
             ;;
         -h|--help|help)
             usage
@@ -54,7 +61,12 @@ done
 
 git -C "$ROOT_DIR" fetch --all --tags
 
-for branch in "${SUPPORTED_PHP_BRANCHES[@]}" "${LEGACY_PHP_BRANCHES[@]}"; do
+target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")
+if [[ "$INCLUDE_LEGACY" -eq 1 ]]; then
+    target_branches+=("${LEGACY_PHP_BRANCHES[@]}")
+fi
+
+for branch in "${target_branches[@]}"; do
     if ! git -C "$ROOT_DIR" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
         echo "Skipping $branch: missing origin/$branch"
         continue
