@@ -23,7 +23,7 @@ assert_file_contains() {
     local file_path="$1"
     local pattern="$2"
 
-    grep -q "$pattern" "$file_path" || {
+    grep -Fq -- "$pattern" "$file_path" || {
         echo "Expected $file_path to contain: $pattern" >&2
         exit 1
     }
@@ -48,6 +48,7 @@ status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
+assert_contains "$status_output" ".dockerignore"
 assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
 
@@ -61,11 +62,26 @@ if [[ "$dry_run_output" != *"Dry run:"* && "$dry_run_output" != *"Local branch a
 fi
 
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
-assert_file_contains "$DOCKERFILE_PATH" 'ghcr.io/mlocati/php-extension-installer:latest'
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb'
+assert_file_contains "$DOCKERFILE_PATH" 'mlocati/php-extension-installer:latest'
+assert_file_contains "$DOCKERFILE_PATH" 'curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15'
+assert_file_contains "$DOCKERFILE_PATH" 'sha256sum -c -'
+assert_file_contains "$DOCKERFILE_PATH" 'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
+assert_file_contains "$DOCKERFILE_PATH" 'make install DESTDIR=/tmp/imgck'
+assert_file_contains "$DOCKERFILE_PATH" "find /tmp/imgck/usr/local/lib -type f"
+assert_file_contains "$DOCKERFILE_PATH" 'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
 assert_file_contains "$DOCKERFILE_PATH" 'install-php-extensions gmp'
+assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with-imagick=/usr/local'
+assert_file_contains "$DOCKERFILE_PATH" 'ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini'
+assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
+assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
+assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
+assert_file_contains "$SEMAPHORE_PATH" 'BUILDKIT_INLINE_CACHE=1'
+assert_file_contains "$SEMAPHORE_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2
@@ -74,7 +90,15 @@ fi
 
 assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
 assert_file_contains "$SCRIPT_PATH" 'worktree prune'
+assert_file_contains "$SCRIPT_PATH" 'use_worktree_as_source_branch'
+assert_file_contains "$SCRIPT_PATH" 'curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15'
 assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
+assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [--legacy|--all] [branch...]'
+assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'INCLUDE_LEGACY=0'
+assert_file_contains "$TAGS_SCRIPT_PATH" '--legacy'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'echo "${version:0:1}.${version:1}"'
 
 tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
