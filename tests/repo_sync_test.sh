@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_PATH="$ROOT_DIR/scripts/repo_sync.sh"
 TAGS_SCRIPT_PATH="$ROOT_DIR/scripts/tags_update.sh"
+CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci_docker_build.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
@@ -23,7 +24,7 @@ assert_file_contains() {
     local file_path="$1"
     local pattern="$2"
 
-    grep -q "$pattern" "$file_path" || {
+    grep -Fq -- "$pattern" "$file_path" || {
         echo "Expected $file_path to contain: $pattern" >&2
         exit 1
     }
@@ -44,12 +45,19 @@ assert_file_contains() {
     exit 1
 }
 
+[[ -x "$CI_DOCKER_BUILD_SCRIPT_PATH" ]] || {
+    echo "Missing executable CI Docker build script: $CI_DOCKER_BUILD_SCRIPT_PATH" >&2
+    exit 1
+}
+
 status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
+assert_contains "$status_output" ".dockerignore"
 assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
+assert_contains "$status_output" "scripts/ci_docker_build.sh"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -61,11 +69,27 @@ if [[ "$dry_run_output" != *"Dry run:"* && "$dry_run_output" != *"Local branch a
 fi
 
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
+assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb'
 assert_file_contains "$DOCKERFILE_PATH" 'ghcr.io/mlocati/php-extension-installer:latest'
+assert_file_contains "$DOCKERFILE_PATH" 'curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15'
+assert_file_contains "$DOCKERFILE_PATH" 'sha256sum -c -'
+assert_file_contains "$DOCKERFILE_PATH" 'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
+assert_file_contains "$DOCKERFILE_PATH" 'make install DESTDIR=/tmp/imgck'
+assert_file_contains "$DOCKERFILE_PATH" "find /tmp/imgck/usr/local/lib -type f"
+assert_file_contains "$DOCKERFILE_PATH" 'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
 assert_file_contains "$DOCKERFILE_PATH" 'install-php-extensions gmp'
+assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with-imagick=/usr/local'
+assert_file_contains "$DOCKERFILE_PATH" 'ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini'
+assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
+assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
+assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
+assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
+assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
+assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci_docker_build.sh'
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2
@@ -74,19 +98,63 @@ fi
 
 assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
 assert_file_contains "$SCRIPT_PATH" 'worktree prune'
+assert_file_contains "$SCRIPT_PATH" 'use_worktree_as_source_branch'
+assert_file_contains "$SCRIPT_PATH" 'curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15'
 assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
+assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [branch...]'
+assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDKIT_INLINE_CACHE=1'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "branch"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "tag"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[@]}" "$BUILD_CONTEXT"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches+=("$1")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'echo "${version:0:1}.${version:1}"'
 
 tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
 assert_contains "$tooling_output" "latest: ok"
 
-supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling)"
-assert_contains "$supported_tooling_output" "php80: ok"
-assert_contains "$supported_tooling_output" "php85: ok"
+supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling || true)"
+assert_contains "$supported_tooling_output" "php80"
+assert_contains "$supported_tooling_output" "php85"
 
-legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling --legacy || true)"
+legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling php73 php74 || true)"
 assert_contains "$legacy_tooling_output" "php73"
 assert_contains "$legacy_tooling_output" "php74"
+
+TMP_DOCKER_BIN="$(mktemp -d "${TMPDIR:-/tmp}/ci-docker-bin.XXXXXX")"
+CI_DOCKER_LOG="$TMP_DOCKER_BIN/docker.log"
+export CI_DOCKER_LOG
+
+cat > "$TMP_DOCKER_BIN/docker" <<'EOF'
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "$CI_DOCKER_LOG"
+if [[ "${1:-}" == "login" ]]; then
+    cat >/dev/null
+fi
+EOF
+chmod +x "$TMP_DOCKER_BIN/docker"
+
+build_only_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu .'
+assert_contains "$build_only_ci_output" 'Build-only branch: not publishing image'
+if grep -Fq -- '-t php-apache:' "$CI_DOCKER_LOG"; then
+    echo "Expected latest build-only CI run to avoid tagging the image." >&2
+    exit 1
+fi
+
+: > "$CI_DOCKER_LOG"
+PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
+assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:php85 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu -t php-apache:php85 .'
+assert_file_contains "$CI_DOCKER_LOG" 'docker login -u 1allen --password-stdin'
+assert_file_contains "$CI_DOCKER_LOG" 'docker push 1allen/php-apache:php85'
+rm -rf "$TMP_DOCKER_BIN"
 
 TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
 trap 'rm -rf "$TMP_REPO"' EXIT

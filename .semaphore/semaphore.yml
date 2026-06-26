@@ -9,19 +9,11 @@ blocks:
     skip:
       when: "branch = 'master'"
     task:
-      prologue:
-        commands:
-          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       jobs:
-        - name: docker build & push
+        - name: docker build
           commands:
             - checkout
-            - IMAGE_TAG=${SEMAPHORE_GIT_TAG_NAME:-$SEMAPHORE_GIT_BRANCH}
-            - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
-            - docker pull "$BUILDER_IMAGE" || true
-            - docker build --pull --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
-            - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-            - docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" bash scripts/ci_docker_build.sh
       secrets:
         - name: dockerhub-1allen
       env_vars:
@@ -31,3 +23,5 @@ blocks:
           value: php-apache
         - name: BUILDER_IMAGE
           value: spritsail/debian-builder:latest
+        - name: DOCKER_BUILDKIT
+          value: "1"
