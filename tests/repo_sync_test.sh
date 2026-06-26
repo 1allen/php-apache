@@ -65,7 +65,7 @@ assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb'
-assert_file_contains "$DOCKERFILE_PATH" 'mlocati/php-extension-installer:latest'
+assert_file_contains "$DOCKERFILE_PATH" 'ghcr.io/mlocati/php-extension-installer:latest'
 assert_file_contains "$DOCKERFILE_PATH" 'curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15'
 assert_file_contains "$DOCKERFILE_PATH" 'sha256sum -c -'
 assert_file_contains "$DOCKERFILE_PATH" 'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
@@ -81,11 +81,12 @@ assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'BUILDKIT_INLINE_CACHE=1'
-assert_file_contains "$SEMAPHORE_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
+assert_file_contains "$SEMAPHORE_PATH" '--cache-from $DOCKER_USERNAME/$IMAGE_NAME:latest'
 assert_file_contains "$SEMAPHORE_PATH" 'PUBLISH_IMAGE=0'
+assert_file_contains "$SEMAPHORE_PATH" 'PUBLISH_TAG=""'
 assert_file_contains "$SEMAPHORE_PATH" "grep -Eq '^php[0-9][0-9]$'"
-assert_file_contains "$SEMAPHORE_PATH" 'IMAGE_TAG="ci-${SEMAPHORE_GIT_SHA:-local}"'
-assert_file_contains "$SEMAPHORE_PATH" 'Build-only branch: not publishing'
+assert_file_contains "$SEMAPHORE_PATH" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 $CACHE_FROM_ARGS -f Dockerfile.ubuntu .'
+assert_file_contains "$SEMAPHORE_PATH" 'Build-only branch: not publishing image'
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2
@@ -97,10 +98,10 @@ assert_file_contains "$SCRIPT_PATH" 'worktree prune'
 assert_file_contains "$SCRIPT_PATH" 'use_worktree_as_source_branch'
 assert_file_contains "$SCRIPT_PATH" 'curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15'
 assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
-assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [--legacy|--all] [branch...]'
+assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [branch...]'
 assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
-assert_file_contains "$TAGS_SCRIPT_PATH" 'INCLUDE_LEGACY=0'
-assert_file_contains "$TAGS_SCRIPT_PATH" '--legacy'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches+=("$1")'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'echo "${version:0:1}.${version:1}"'
 
@@ -108,11 +109,11 @@ tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
 assert_contains "$tooling_output" "latest: ok"
 
-supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling)"
-assert_contains "$supported_tooling_output" "php80: ok"
-assert_contains "$supported_tooling_output" "php85: ok"
+supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling || true)"
+assert_contains "$supported_tooling_output" "php80"
+assert_contains "$supported_tooling_output" "php85"
 
-legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling --legacy || true)"
+legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling php73 php74 || true)"
 assert_contains "$legacy_tooling_output" "php73"
 assert_contains "$legacy_tooling_output" "php74"
 

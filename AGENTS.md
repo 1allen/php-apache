@@ -25,10 +25,10 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 ## Dockerfile Rules
 
 - `Dockerfile.ubuntu` is the maintained image path.
-- The first stage copies `/usr/bin/install-php-extensions` from the public
-  `mlocati/php-extension-installer:latest` image into the final image. Keep that
-  binary in the final image so downstream images can install more extensions
-  without fetching the installer again.
+- The first stage copies `/usr/bin/install-php-extensions` from
+  `ghcr.io/mlocati/php-extension-installer:latest` into the final image. Keep
+  that binary in the final image so downstream images can install more
+  extensions without fetching the installer again.
 - Prefer `install-php-extensions` for ordinary extensions and downstream image
   customization, for example:
 
@@ -58,15 +58,18 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
   changes on `latest`, apply the equivalent Dockerfile update to each `phpXX`
   branch while preserving that branch's `FROM webdevops/php-apache:X.Y` line
   and extension compatibility pins.
-- Run `bash scripts/repo_sync.sh verify-image-tooling` before pushing image
-  behavior updates. This catches the failure mode where README examples mention
-  a downstream customization feature but semver branches such as `php82` do not
-  actually include it in their committed Dockerfiles.
+- For a `latest`-only PR, run `bash scripts/repo_sync.sh verify-image-tooling
+  latest`. After applying the equivalent Dockerfile updates to the supported
+  PHP branches, run `bash scripts/repo_sync.sh verify-image-tooling` before
+  pushing those branch updates. This catches the failure mode where README
+  examples mention a downstream customization feature but semver branches such
+  as `php82` do not actually include it in their committed Dockerfiles.
 - `verify-image-tooling` checks `latest` plus supported branches by default.
-  Legacy branches `php73` and `php74` are opt-in with
-  `bash scripts/repo_sync.sh verify-image-tooling --legacy`.
-- `sync-shared` and `scripts/tags_update.sh` also skip legacy PHP 7 branches by
-  default. Use `--legacy` only for critical emergency maintenance.
+  Check PHP 7 branches only by naming them explicitly, for example
+  `bash scripts/repo_sync.sh verify-image-tooling php73 php74`.
+- `sync-shared` and `scripts/tags_update.sh` also skip PHP 7 branches by
+  default. Name `php73` or `php74` explicitly only for critical emergency
+  maintenance.
 - If the base PHP minor changes, update only the `FROM webdevops/php-apache:X.Y`
   line on the corresponding `phpXX` branch unless shared behavior also changed.
 
@@ -79,7 +82,9 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 4. Run `bash tests/repo_sync_test.sh`.
 5. For image behavior changes, verify the matching supported `phpXX` branches
    include the Dockerfile update before pushing semver tags such as `8.2`.
-6. Run `bash scripts/repo_sync.sh verify-image-tooling`.
+6. Run `bash scripts/repo_sync.sh verify-image-tooling latest` for a
+   `latest`-only PR, and run `bash scripts/repo_sync.sh verify-image-tooling`
+   after supported PHP branch Dockerfiles have been updated.
 7. If Docker is available, run a local image build and verify:
 
    ```bash

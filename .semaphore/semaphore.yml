@@ -17,27 +17,32 @@ blocks:
               set -eu
 
               PUBLISH_IMAGE=0
+              PUBLISH_TAG=""
+              CACHE_FROM_ARGS=""
               if [ -n "${SEMAPHORE_GIT_TAG_NAME:-}" ]; then
-                IMAGE_TAG="$SEMAPHORE_GIT_TAG_NAME"
+                PUBLISH_TAG="$SEMAPHORE_GIT_TAG_NAME"
                 PUBLISH_IMAGE=1
               elif echo "${SEMAPHORE_GIT_BRANCH:-}" | grep -Eq '^php[0-9][0-9]$'; then
-                IMAGE_TAG="$SEMAPHORE_GIT_BRANCH"
+                PUBLISH_TAG="$SEMAPHORE_GIT_BRANCH"
                 PUBLISH_IMAGE=1
-              else
-                IMAGE_TAG="ci-${SEMAPHORE_GIT_SHA:-local}"
               fi
 
-              docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
+              if [ "$PUBLISH_IMAGE" -eq 1 ]; then
+                docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$PUBLISH_TAG" || true
+                CACHE_FROM_ARGS="$CACHE_FROM_ARGS --cache-from $DOCKER_USERNAME/$IMAGE_NAME:$PUBLISH_TAG"
+              fi
               docker pull "$DOCKER_USERNAME/$IMAGE_NAME:latest" || true
               docker pull "$BUILDER_IMAGE" || true
-              docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
+              CACHE_FROM_ARGS="$CACHE_FROM_ARGS --cache-from $DOCKER_USERNAME/$IMAGE_NAME:latest --cache-from $BUILDER_IMAGE"
 
               if [ "$PUBLISH_IMAGE" -eq 1 ]; then
+                docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 $CACHE_FROM_ARGS -f Dockerfile.ubuntu -t "$IMAGE_NAME:$PUBLISH_TAG" .
                 echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
-                docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-                docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
+                docker tag "$IMAGE_NAME:$PUBLISH_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$PUBLISH_TAG"
+                docker push "$DOCKER_USERNAME/$IMAGE_NAME:$PUBLISH_TAG"
               else
-                echo "Build-only branch: not publishing $IMAGE_NAME:$IMAGE_TAG"
+                docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 $CACHE_FROM_ARGS -f Dockerfile.ubuntu .
+                echo "Build-only branch: not publishing image"
               fi
       secrets:
         - name: dockerhub-1allen

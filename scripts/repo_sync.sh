@@ -25,8 +25,8 @@ usage() {
     cat <<'EOF'
 Usage:
   bash scripts/repo_sync.sh status
-  bash scripts/repo_sync.sh sync-shared [--apply] [--legacy|--all] [branch...]
-  bash scripts/repo_sync.sh verify-image-tooling [--legacy|--all] [branch...]
+  bash scripts/repo_sync.sh sync-shared [--apply] [branch...]
+  bash scripts/repo_sync.sh verify-image-tooling [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
 Commands:
@@ -34,12 +34,12 @@ Commands:
                      and advisory upstream Docker Hub tags.
   sync-shared        Sync shared files from the source branch into local PHP branches.
                      Dry-run by default. Targets supported branches only unless
-                     explicit branches, --legacy, or --all are provided.
+                     explicit branches are provided.
                      Use --apply to create branch-local commits.
   verify-image-tooling
                      Check that supported branch Dockerfiles include the image
                      tooling expected by downstream custom images.
-                     Use --legacy to include legacy branches or --all for both.
+                     Pass branch names explicitly to check a narrower or older set.
   bootstrap-version  Create a new local PHP branch from the source branch and rewrite
                      Dockerfile.ubuntu to the requested PHP version. Dry-run by default.
 EOF
@@ -222,8 +222,6 @@ status_command() {
 
 sync_shared_command() {
     local apply=0
-    local include_legacy=0
-    local include_supported=1
     local message="chore: sync shared repo files from ${BOOTSTRAP_SOURCE_BRANCH}"
     local target_branches=()
     local source_worktree=""
@@ -238,13 +236,8 @@ sync_shared_command() {
             --apply)
                 apply=1
                 ;;
-            --legacy)
-                include_supported=0
-                include_legacy=1
-                ;;
-            --all)
-                include_supported=1
-                include_legacy=1
+            -*)
+                die "Unknown sync-shared option: $1"
                 ;;
             *)
                 target_branches+=("$1")
@@ -254,13 +247,7 @@ sync_shared_command() {
     done
 
     if [[ ${#target_branches[@]} -eq 0 ]]; then
-        if [[ $include_supported -eq 1 ]]; then
-            target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
-        fi
-
-        if [[ $include_legacy -eq 1 ]]; then
-            target_branches+=("${LEGACY_PHP_BRANCHES[@]}")
-        fi
+        target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
     prepare_temp_root
@@ -325,8 +312,6 @@ sync_shared_command() {
 
 verify_image_tooling_command() {
     local target_branches=()
-    local include_legacy=0
-    local include_supported=1
     local branch
     local dockerfile_content
     local marker
@@ -334,7 +319,7 @@ verify_image_tooling_command() {
     local failed=0
     local current
     local required_markers=(
-        'FROM mlocati/php-extension-installer:latest AS php-extension-installer'
+        'FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer'
         'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
         'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
         'install-php-extensions gmp'
@@ -345,13 +330,8 @@ verify_image_tooling_command() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --legacy)
-                include_supported=0
-                include_legacy=1
-                ;;
-            --all)
-                include_supported=1
-                include_legacy=1
+            -*)
+                die "Unknown verify-image-tooling option: $1"
                 ;;
             *)
                 target_branches+=("$1")
@@ -362,14 +342,7 @@ verify_image_tooling_command() {
 
     if [[ ${#target_branches[@]} -eq 0 ]]; then
         target_branches+=("$BOOTSTRAP_SOURCE_BRANCH")
-
-        if [[ $include_supported -eq 1 ]]; then
-            target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
-        fi
-
-        if [[ $include_legacy -eq 1 ]]; then
-            target_branches+=("${LEGACY_PHP_BRANCHES[@]}")
-        fi
+        target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
     print_section "Image tooling branches:" "${target_branches[@]}"

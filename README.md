@@ -96,8 +96,8 @@ bash scripts/repo_sync.sh sync-shared --apply
 ```
 
 `sync-shared` targets supported PHP branches by default. Deprecated PHP 7
-branches are skipped unless you pass explicit branch names or use
-`--legacy`/`--all` for critical maintenance.
+branches are skipped unless you pass explicit branch names for critical
+maintenance.
 
 After syncing shared files into local supported `phpXX` branches, push those
 branches so Semaphore triggers the corresponding branch image builds.
@@ -127,8 +127,8 @@ bash scripts/tags_update.sh --apply
 ```
 
 Tag updates also target supported PHP branches by default. Deprecated PHP 7 tags
-are left in place unless you deliberately run `bash scripts/tags_update.sh
---legacy --apply`.
+are left in place unless you deliberately name those branches, for example
+`bash scripts/tags_update.sh --apply php73 php74`.
 
 Run the local repository test after changing Dockerfiles, scripts, config, or
 shared documentation:
