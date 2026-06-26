@@ -35,6 +35,10 @@ PHP branch history.
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
   and `latest` as cache sources before building
 
+The Docker build and publish logic lives in `scripts/ci_docker_build.sh` so CI
+configuration stays thin. Other CI providers can call the same script by setting
+`CI_GIT_BRANCH` and `CI_GIT_TAG` from their native branch/tag variables.
+
 For PHP `8.5`, the Ubuntu Dockerfile now pins `imagick 3.8.1`, which is the
 first recent PECL release line compatible with PHP `8.5`.
 

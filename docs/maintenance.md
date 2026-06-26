@@ -29,6 +29,10 @@ As of 2026-06-24:
 - CI enables BuildKit inline cache metadata and uses both the target image tag
   and `latest` as cache sources. PR branches and `latest` are build-only;
   Docker Hub publishing is reserved for `phpXX` branches and git tags.
+- CI declaration files call `scripts/ci_docker_build.sh` instead of embedding
+  the Docker build and publish shell logic. New CI providers should map their
+  native branch/tag variables to `CI_GIT_BRANCH` and `CI_GIT_TAG` before calling
+  that script.
 - `.dockerignore` intentionally keeps repo docs, tests, scripts, local agent
   state, and Git metadata out of the Docker build context because the image does
   not copy files from the repository.
@@ -122,6 +126,13 @@ If the local Docker CLI falls back to the legacy builder, use Buildx instead:
 
 ```bash
 docker buildx build --pull -f Dockerfile.ubuntu .
+```
+
+To exercise the same build decision logic used by CI, run the script directly:
+
+```bash
+CI_GIT_BRANCH=latest bash scripts/ci_docker_build.sh
+CI_GIT_BRANCH=php85 DOCKER_PASSWORD=... bash scripts/ci_docker_build.sh
 ```
 
 If the local Docker build is not practical, still run the shell test and review
