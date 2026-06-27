@@ -5,15 +5,35 @@ agent:
     type: e1-standard-2
     os_image: ubuntu2404
 blocks:
-  - name: build
+  - name: build image
     skip:
-      when: "branch = 'master'"
+      when: "pull_request = '' AND tag = '' AND branch != 'latest' AND branch !~ '^php[0-9][0-9]$'"
     task:
       jobs:
         - name: docker build
           commands:
             - checkout
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" bash scripts/ci/docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_DOCKER_MODE=build bash scripts/ci/docker_build.sh
+            - test ! -f .ci-image/php-apache.tar.gz || artifact push workflow .ci-image/php-apache.tar.gz
+      env_vars:
+        - name: DOCKER_USERNAME
+          value: 1allen
+        - name: IMAGE_NAME
+          value: php-apache
+        - name: DOCKER_BUILDKIT
+          value: "1"
+  - name: publish image
+    dependencies:
+      - build image
+    skip:
+      when: "tag = '' AND branch !~ '^php[0-9][0-9]$'"
+    task:
+      jobs:
+        - name: docker publish
+          commands:
+            - checkout
+            - artifact pull workflow .ci-image/php-apache.tar.gz
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_DOCKER_MODE=publish bash scripts/ci/docker_build.sh
       secrets:
         - name: dockerhub-1allen
       env_vars:

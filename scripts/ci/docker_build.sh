@@ -11,6 +11,8 @@ IMAGE_NAME="${IMAGE_NAME:-php-apache}"
 BUILDER_IMAGE="${BUILDER_IMAGE:-spritsail/debian-builder:latest}"
 CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"
 CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"
+CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"
+CI_DOCKER_IMAGE_ARCHIVE="${CI_DOCKER_IMAGE_ARCHIVE:-.ci-image/${IMAGE_NAME}.tar.gz}"
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
 if [[ -z "$CI_GIT_BRANCH" && "${GITHUB_REF_TYPE:-}" == "branch" ]]; then
@@ -36,6 +38,10 @@ docker_pull_cache_source() {
     docker pull "$image_ref" || true
 }
 
+is_publishable_ref() {
+    [[ -n "$publish_tag" ]]
+}
+
 if [[ -n "$CI_GIT_TAG" ]]; then
     publish_tag="$CI_GIT_TAG"
     publish_image=1
@@ -45,6 +51,26 @@ elif [[ "$CI_GIT_BRANCH" =~ ^php[0-9][0-9]$ ]]; then
 fi
 
 cd "$ROOT_DIR"
+
+case "$CI_DOCKER_MODE" in
+    build|publish)
+        ;;
+    *)
+        die "Unknown CI_DOCKER_MODE: $CI_DOCKER_MODE"
+        ;;
+esac
+
+if [[ "$CI_DOCKER_MODE" == "publish" ]]; then
+    is_publishable_ref || die "Publish mode requires a git tag or phpXX branch."
+    [[ -f "$CI_DOCKER_IMAGE_ARCHIVE" ]] || die "Missing Docker image archive: $CI_DOCKER_IMAGE_ARCHIVE"
+    [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $DOCKER_USERNAME/$IMAGE_NAME:$publish_tag."
+
+    gzip -dc "$CI_DOCKER_IMAGE_ARCHIVE" | docker load
+    echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+    docker tag "$IMAGE_NAME:$publish_tag" "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
+    docker push "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
+    exit 0
+fi
 
 if [[ "$publish_image" -eq 1 ]]; then
     docker_pull_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
@@ -70,10 +96,9 @@ fi
 docker build "${build_args[@]}" "$BUILD_CONTEXT"
 
 if [[ "$publish_image" -eq 1 ]]; then
-    [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $DOCKER_USERNAME/$IMAGE_NAME:$publish_tag."
-    echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
-    docker tag "$IMAGE_NAME:$publish_tag" "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
-    docker push "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
+    mkdir -p "$(dirname "$CI_DOCKER_IMAGE_ARCHIVE")"
+    docker save "$IMAGE_NAME:$publish_tag" | gzip -1 > "$CI_DOCKER_IMAGE_ARCHIVE"
+    echo "Saved Docker image artifact: $CI_DOCKER_IMAGE_ARCHIVE"
 else
     echo "Build-only branch: not publishing image"
 fi

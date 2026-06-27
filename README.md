@@ -29,11 +29,16 @@ PHP branch history.
 ## Build behavior
 
 - PR branches and pushes to `latest` run build-only checks and do not publish
-  Docker images
+  Docker images or receive Docker Hub secrets
+- ordinary feature-branch push workflows are skipped when a PR workflow exists,
+  so the same commit is not built twice
 - pushes to `phpXX` branches publish branch-specific image tags
 - git tags such as `8.4` publish tag-specific images
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
   and `latest` as cache sources before building
+- publishable `phpXX` branches and git tags build once in a secret-free block,
+  save the Docker image as a workflow artifact, then publish that artifact from
+  a separate Docker Hub block
 - Semaphore uses `e1-standard-2` by default to keep build-only PR checks small;
   bump only if the Docker build proves it needs more memory or disk.
 
