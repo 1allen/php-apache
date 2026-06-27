@@ -87,10 +87,10 @@ assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" 'tag =~ ".+" OR branch =~ "^php[0-9][0-9]$"'
+assert_file_contains "$SEMAPHORE_PATH" "tag =~ '^.+$' OR branch =~ '^php[0-9][0-9]$'"
 assert_file_contains "$SEMAPHORE_PATH" 'name: publish image'
 assert_file_contains "$SEMAPHORE_PATH" 'dependencies:'
-assert_file_contains "$SEMAPHORE_PATH" 'tag !~ ".+" AND branch !~ "^php[0-9][0-9]$"'
+assert_file_contains "$SEMAPHORE_PATH" "tag !~ '^.+$' AND branch !~ '^php[0-9][0-9]$'"
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'

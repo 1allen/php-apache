@@ -29,8 +29,7 @@ As of 2026-06-24:
 - CI enables BuildKit inline cache metadata and uses both the target image tag
   and `latest` as cache sources. PR branches and `latest` are build-only;
   Docker Hub publishing is reserved for `phpXX` branches and git tags.
-- Semaphore uses a secret-free build block for PRs, `latest`, `phpXX` branches,
-  and git tags. PR and `latest` use a secret-free build block. Publishable
+- Semaphore uses a secret-free build block for PRs and `latest`. Publishable
   `phpXX` branches and git tags use a separate Docker Hub block that builds once
   and pushes from the same job. Ordinary feature-branch push workflows enter the
   build block but exit before Docker starts, using `SEMAPHORE_GIT_REF_TYPE` to
