@@ -33,7 +33,8 @@ As of 2026-06-24:
   and git tags. For publishable `phpXX` branches and git tags, that build block
   saves the Docker image as a workflow artifact; a separate publish block with
   Docker Hub credentials loads the artifact and pushes it. Ordinary non-PR
-  feature-branch push workflows are skipped. This keeps a PR branch from
+  feature-branch push workflows are skipped with Semaphore's documented
+  `pull_request !~ '.*'` condition form. This keeps a PR branch from
   building the same commit once as a push and once as a PR, while preserving
   publish builds for version branches and tags.
 - The Docker image artifact is intentionally limited to publishable refs because

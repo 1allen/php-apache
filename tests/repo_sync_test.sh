@@ -87,7 +87,7 @@ assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" "pull_request = '' AND tag = '' AND branch != 'latest' AND branch !~ '^php[0-9][0-9]$'"
+assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '.*' AND tag = '' AND branch != 'latest' AND branch !~ '^php[0-9][0-9]$'"
 assert_file_contains "$SEMAPHORE_PATH" 'name: publish image'
 assert_file_contains "$SEMAPHORE_PATH" 'dependencies:'
 assert_file_contains "$SEMAPHORE_PATH" "tag = '' AND branch !~ '^php[0-9][0-9]$'"
@@ -109,6 +109,7 @@ blocks = config.fetch("blocks")
 smoke = blocks.find { |block| block["name"] == "build image" } or abort "Missing build image block"
 publish = blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
 
+abort "Build image block must define empty dependencies" unless smoke.fetch("dependencies") == []
 abort "Build image block must not receive secrets" if smoke.fetch("task", {}).key?("secrets")
 unless publish.fetch("dependencies", []).include?("build image")
     abort "Publish image block must depend on build image"
