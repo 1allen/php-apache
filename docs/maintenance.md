@@ -32,11 +32,11 @@ As of 2026-06-24:
 - Semaphore uses a secret-free build block for PRs, `latest`, `phpXX` branches,
   and git tags. For publishable `phpXX` branches and git tags, that build block
   saves the Docker image as a workflow artifact; a separate publish block with
-  Docker Hub credentials loads the artifact and pushes it. Ordinary non-PR
-  feature-branch push workflows are skipped with Semaphore's documented
-  `pull_request !~ '.*'` condition form. This keeps a PR branch from
-  building the same commit once as a push and once as a PR, while preserving
-  publish builds for version branches and tags.
+  Docker Hub credentials loads the artifact and pushes it. Ordinary
+  feature-branch push workflows enter the build block but exit before Docker
+  starts, using `SEMAPHORE_GIT_REF_TYPE` to distinguish push and PR workflows.
+  This keeps a PR branch from building the same commit once as a push and once
+  as a PR, while preserving publish builds for version branches and tags.
 - The Docker image artifact is intentionally limited to publishable refs because
   artifact storage can affect CI cost. PR and `latest` smoke builds do not save
   image artifacts.

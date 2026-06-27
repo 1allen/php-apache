@@ -7,14 +7,12 @@ agent:
 blocks:
   - name: build image
     dependencies: []
-    skip:
-      when: "pull_request !~ '.*' AND tag = '' AND branch != 'latest' AND branch !~ '^php[0-9][0-9]$'"
     task:
       jobs:
         - name: docker build
           commands:
             - checkout
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_DOCKER_MODE=build bash scripts/ci/docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build bash scripts/ci/docker_build.sh
             - test ! -f .ci-image/php-apache.tar.gz || artifact push workflow .ci-image/php-apache.tar.gz
       env_vars:
         - name: DOCKER_USERNAME
@@ -34,7 +32,7 @@ blocks:
           commands:
             - checkout
             - artifact pull workflow .ci-image/php-apache.tar.gz
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_DOCKER_MODE=publish bash scripts/ci/docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=publish bash scripts/ci/docker_build.sh
       secrets:
         - name: dockerhub-1allen
       env_vars:

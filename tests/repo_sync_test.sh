@@ -87,13 +87,13 @@ assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '.*' AND tag = '' AND branch != 'latest' AND branch !~ '^php[0-9][0-9]$'"
 assert_file_contains "$SEMAPHORE_PATH" 'name: publish image'
 assert_file_contains "$SEMAPHORE_PATH" 'dependencies:'
 assert_file_contains "$SEMAPHORE_PATH" "tag = '' AND branch !~ '^php[0-9][0-9]$'"
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
+assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_DOCKER_MODE=build'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_DOCKER_MODE=publish'
@@ -144,6 +144,8 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "bra
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "tag"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[@]}" "$BUILD_CONTEXT"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish branch push: skipping Docker build'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker save "$IMAGE_NAME:$publish_tag" | gzip -1 > "$CI_DOCKER_IMAGE_ARCHIVE"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'gzip -dc "$CI_DOCKER_IMAGE_ARCHIVE" | docker load'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
@@ -181,6 +183,13 @@ case "${1:-}" in
 esac
 EOF
 chmod +x "$TMP_DOCKER_BIN/docker"
+
+feature_push_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=feature/test CI_GIT_REF_TYPE=branch bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_contains "$feature_push_ci_output" 'Non-publish branch push: skipping Docker build'
+if [[ -s "$CI_DOCKER_LOG" ]]; then
+    echo "Expected ordinary feature branch push to avoid Docker commands." >&2
+    exit 1
+fi
 
 build_only_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest CI_DOCKER_IMAGE_ARCHIVE="$TMP_DOCKER_BIN/php-apache.tar.gz" bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
 assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu .'
