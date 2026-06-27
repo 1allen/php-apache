@@ -54,7 +54,7 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
   with an equivalent or better cache strategy. PR branches and `latest` should
   build only; Docker Hub publishing should stay limited to `phpXX` branches and
   git tags.
-- Keep Docker build and publish logic in `scripts/ci_docker_build.sh`; CI
+- Keep Docker build and publish logic in `scripts/ci/docker_build.sh`; CI
   declaration files should only checkout, map provider-specific branch/tag
   variables to `CI_GIT_BRANCH` and `CI_GIT_TAG`, and call that script.
 - `Dockerfile.ubuntu` is not part of shared-file sync. When image behavior

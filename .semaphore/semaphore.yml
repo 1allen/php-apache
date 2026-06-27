@@ -13,7 +13,7 @@ blocks:
         - name: docker build
           commands:
             - checkout
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" bash scripts/ci_docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" bash scripts/ci/docker_build.sh
       secrets:
         - name: dockerhub-1allen
       env_vars:

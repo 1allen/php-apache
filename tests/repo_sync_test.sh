@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_PATH="$ROOT_DIR/scripts/repo_sync.sh"
 TAGS_SCRIPT_PATH="$ROOT_DIR/scripts/tags_update.sh"
-CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci_docker_build.sh"
+CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
@@ -57,7 +57,7 @@ assert_contains "$status_output" ".semaphore/semaphore.yml"
 assert_contains "$status_output" ".dockerignore"
 assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
-assert_contains "$status_output" "scripts/ci_docker_build.sh"
+assert_contains "$status_output" "scripts/ci/docker_build.sh"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -89,7 +89,7 @@ assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
-assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci_docker_build.sh'
+assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2

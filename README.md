@@ -35,7 +35,7 @@ PHP branch history.
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
   and `latest` as cache sources before building
 
-The Docker build and publish logic lives in `scripts/ci_docker_build.sh` so CI
+The Docker build and publish logic lives in `scripts/ci/docker_build.sh` so CI
 configuration stays thin. Other CI providers can call the same script by setting
 `CI_GIT_BRANCH` and `CI_GIT_TAG` from their native branch/tag variables.
 
