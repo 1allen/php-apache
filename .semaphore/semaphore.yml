@@ -2,7 +2,7 @@ version: v1.0
 name: php-apache semaphore ci
 agent:
   machine:
-    type: f1-standard-2
+    type: e1-standard-2
     os_image: ubuntu2404
 blocks:
   - name: build
@@ -21,7 +21,5 @@ blocks:
           value: 1allen
         - name: IMAGE_NAME
           value: php-apache
-        - name: BUILDER_IMAGE
-          value: spritsail/debian-builder:latest
         - name: DOCKER_BUILDKIT
           value: "1"

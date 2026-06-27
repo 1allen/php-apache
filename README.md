@@ -34,6 +34,8 @@ PHP branch history.
 - git tags such as `8.4` publish tag-specific images
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
   and `latest` as cache sources before building
+- Semaphore uses `e1-standard-2` by default to keep build-only PR checks small;
+  bump only if the Docker build proves it needs more memory or disk.
 
 The Docker build and publish logic lives in `scripts/ci/docker_build.sh` so CI
 configuration stays thin. Other CI providers can call the same script by setting

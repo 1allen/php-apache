@@ -85,11 +85,17 @@ assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with
 assert_file_contains "$DOCKERFILE_PATH" 'ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini'
 assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
+assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" "when: \"branch = 'master'\""
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
+
+if grep -q "name: BUILDER_IMAGE" "$SEMAPHORE_PATH"; then
+    echo "Expected Semaphore config to let scripts/ci/docker_build.sh own BUILDER_IMAGE." >&2
+    exit 1
+fi
 
 if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
     echo "Expected Semaphore config to build phpXX branches." >&2
