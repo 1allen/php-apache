@@ -98,7 +98,6 @@ assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYP
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_DOCKER_MODE=build'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_DOCKER_MODE=build-publish'
-assert_file_contains "$SEMAPHORE_PATH" 'artifact push workflow .ci-image/php-apache.tar.gz'
 assert_file_contains "$SEMAPHORE_PATH" 'dockerhub-1allen'
 
 ruby - "$SEMAPHORE_PATH" <<'RUBY'
@@ -144,8 +143,6 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish branch push: skipping Docker build'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker save "$IMAGE_NAME:$publish_tag" | gzip -1 > "$CI_DOCKER_IMAGE_ARCHIVE"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'gzip -dc "$CI_DOCKER_IMAGE_ARCHIVE" | docker load'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
@@ -173,11 +170,8 @@ cat > "$TMP_DOCKER_BIN/docker" <<'EOF'
 #!/usr/bin/env bash
 printf 'docker %s\n' "$*" >> "$CI_DOCKER_LOG"
 case "${1:-}" in
-    login|load)
+    login)
         cat >/dev/null
-        ;;
-    save)
-        printf 'fake docker image'
         ;;
 esac
 EOF
@@ -190,7 +184,7 @@ if [[ -s "$CI_DOCKER_LOG" ]]; then
     exit 1
 fi
 
-build_only_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest CI_DOCKER_IMAGE_ARCHIVE="$TMP_DOCKER_BIN/php-apache.tar.gz" bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+build_only_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
 assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu .'
 assert_contains "$build_only_ci_output" 'Build-only branch: not publishing image'
 if grep -Fq -- '-t php-apache:' "$CI_DOCKER_LOG"; then
@@ -199,23 +193,13 @@ if grep -Fq -- '-t php-apache:' "$CI_DOCKER_LOG"; then
 fi
 
 : > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_IMAGE_ARCHIVE="$TMP_DOCKER_BIN/php-apache.tar.gz" bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
+publishable_build_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
 assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:php85 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu -t php-apache:php85 .'
-assert_file_contains "$CI_DOCKER_LOG" 'docker save php-apache:php85'
-[[ -s "$TMP_DOCKER_BIN/php-apache.tar.gz" ]] || {
-    echo "Expected publishable CI build to save a Docker image archive." >&2
-    exit 1
-}
+assert_contains "$publishable_build_output" 'Publishable ref built without publishing: php-apache:php85'
 if grep -Fq -- 'docker login' "$CI_DOCKER_LOG" || grep -Fq -- 'docker push' "$CI_DOCKER_LOG"; then
     echo "Expected CI build mode to avoid Docker login/push." >&2
     exit 1
 fi
-
-: > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=publish CI_DOCKER_IMAGE_ARCHIVE="$TMP_DOCKER_BIN/php-apache.tar.gz" DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
-assert_file_contains "$CI_DOCKER_LOG" 'docker load'
-assert_file_contains "$CI_DOCKER_LOG" 'docker login -u 1allen --password-stdin'
-assert_file_contains "$CI_DOCKER_LOG" 'docker push 1allen/php-apache:php85'
 
 : > "$CI_DOCKER_LOG"
 PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"

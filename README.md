@@ -38,6 +38,8 @@ PHP branch history.
   and `latest` as cache sources before building
 - publishable `phpXX` branches and git tags build once in a separate Docker Hub
   block and push from that same job
+- CI does not pass Docker image artifacts between jobs; the image is large and
+  the publish block can build once and push directly
 - Semaphore uses `e1-standard-2` by default to keep build-only PR checks small;
   bump only if the Docker build proves it needs more memory or disk.
 

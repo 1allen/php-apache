@@ -37,11 +37,9 @@ As of 2026-06-24:
   distinguish push and PR workflows. This keeps a PR branch from building the
   same commit once as a push and once as a PR, while preserving publish builds
   for version branches and tags.
-- The Docker image artifact is intentionally limited to publishable refs because
-  artifact storage can affect CI cost. PR and `latest` smoke builds do not save
-  image artifacts. The script supports artifact handoff with `CI_DOCKER_MODE=build`
-  and `CI_DOCKER_MODE=publish`, but Semaphore currently uses `build-publish` for
-  publishable refs to avoid fragile multi-block dependency behavior.
+- Semaphore does not pass Docker image artifacts between jobs. A saved Docker
+  image is large, has awkward ref-specific naming, and adds artifact storage
+  cost without a clear win for this small pipeline.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. New CI providers should map their
   native branch/tag variables to `CI_GIT_BRANCH` and `CI_GIT_TAG` before calling
@@ -149,7 +147,7 @@ To exercise the same build decision logic used by CI, run the script directly:
 ```bash
 CI_GIT_BRANCH=latest bash scripts/ci/docker_build.sh
 CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh
-CI_GIT_BRANCH=php85 CI_DOCKER_MODE=publish DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
+CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
 ```
 
 If the local Docker build is not practical, still run the shell test and review
