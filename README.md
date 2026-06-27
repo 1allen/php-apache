@@ -36,9 +36,8 @@ PHP branch history.
 - git tags such as `8.4` publish tag-specific images
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
   and `latest` as cache sources before building
-- publishable `phpXX` branches and git tags build once in a secret-free block,
-  save the Docker image as a workflow artifact, then publish that artifact from
-  a separate Docker Hub block
+- publishable `phpXX` branches and git tags build once in a separate Docker Hub
+  block and push from that same job
 - Semaphore uses `e1-standard-2` by default to keep build-only PR checks small;
   bump only if the Docker build proves it needs more memory or disk.
 

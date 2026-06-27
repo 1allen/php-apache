@@ -56,9 +56,8 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
   git tags.
 - Keep Semaphore from double-building PR commits: PR workflows should run, while
   ordinary feature-branch push workflows should be skipped. Keep PR and `latest`
-  smoke builds secret-free. For `phpXX` branches and git tags, build once in a
-  secret-free block, pass the saved Docker image through a workflow artifact,
-  and push it from the Docker Hub publish block.
+  smoke builds secret-free. For `phpXX` branches and git tags, run the Docker
+  Hub publish block only once and do not also run the smoke build.
 - Keep Docker build and publish logic in `scripts/ci/docker_build.sh`; CI
   declaration files should only checkout, map provider-specific branch/tag
   variables to `CI_GIT_BRANCH` and `CI_GIT_TAG`, and call that script.

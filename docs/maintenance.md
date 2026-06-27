@@ -30,16 +30,18 @@ As of 2026-06-24:
   and `latest` as cache sources. PR branches and `latest` are build-only;
   Docker Hub publishing is reserved for `phpXX` branches and git tags.
 - Semaphore uses a secret-free build block for PRs, `latest`, `phpXX` branches,
-  and git tags. For publishable `phpXX` branches and git tags, that build block
-  saves the Docker image as a workflow artifact; a separate publish block with
-  Docker Hub credentials loads the artifact and pushes it. Ordinary
-  feature-branch push workflows enter the build block but exit before Docker
-  starts, using `SEMAPHORE_GIT_REF_TYPE` to distinguish push and PR workflows.
-  This keeps a PR branch from building the same commit once as a push and once
-  as a PR, while preserving publish builds for version branches and tags.
+  and git tags. PR and `latest` use a secret-free build block. Publishable
+  `phpXX` branches and git tags use a separate Docker Hub block that builds once
+  and pushes from the same job. Ordinary feature-branch push workflows enter the
+  build block but exit before Docker starts, using `SEMAPHORE_GIT_REF_TYPE` to
+  distinguish push and PR workflows. This keeps a PR branch from building the
+  same commit once as a push and once as a PR, while preserving publish builds
+  for version branches and tags.
 - The Docker image artifact is intentionally limited to publishable refs because
   artifact storage can affect CI cost. PR and `latest` smoke builds do not save
-  image artifacts.
+  image artifacts. The script supports artifact handoff with `CI_DOCKER_MODE=build`
+  and `CI_DOCKER_MODE=publish`, but Semaphore currently uses `build-publish` for
+  publishable refs to avoid fragile multi-block dependency behavior.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. New CI providers should map their
   native branch/tag variables to `CI_GIT_BRANCH` and `CI_GIT_TAG` before calling

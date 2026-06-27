@@ -7,6 +7,8 @@ agent:
 blocks:
   - name: build image
     dependencies: []
+    skip:
+      when: 'tag =~ ".+" OR branch =~ "^php[0-9][0-9]$"'
     task:
       jobs:
         - name: docker build
@@ -22,17 +24,15 @@ blocks:
         - name: DOCKER_BUILDKIT
           value: "1"
   - name: publish image
-    dependencies:
-      - build image
+    dependencies: []
     skip:
-      when: "tag = '' AND branch !~ '^php[0-9][0-9]$'"
+      when: 'tag = "" AND branch !~ "^php[0-9][0-9]$"'
     task:
       jobs:
         - name: docker publish
           commands:
             - checkout
-            - artifact pull workflow .ci-image/php-apache.tar.gz
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=publish bash scripts/ci/docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build-publish bash scripts/ci/docker_build.sh
       secrets:
         - name: dockerhub-1allen
       env_vars:

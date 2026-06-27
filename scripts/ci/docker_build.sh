@@ -62,7 +62,7 @@ fi
 cd "$ROOT_DIR"
 
 case "$CI_DOCKER_MODE" in
-    build|publish)
+    build|publish|build-publish)
         ;;
     *)
         die "Unknown CI_DOCKER_MODE: $CI_DOCKER_MODE"
@@ -109,7 +109,12 @@ fi
 
 docker build "${build_args[@]}" "$BUILD_CONTEXT"
 
-if [[ "$publish_image" -eq 1 ]]; then
+if [[ "$publish_image" -eq 1 && "$CI_DOCKER_MODE" == "build-publish" ]]; then
+    [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $DOCKER_USERNAME/$IMAGE_NAME:$publish_tag."
+    echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+    docker tag "$IMAGE_NAME:$publish_tag" "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
+    docker push "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
+elif [[ "$publish_image" -eq 1 ]]; then
     mkdir -p "$(dirname "$CI_DOCKER_IMAGE_ARCHIVE")"
     docker save "$IMAGE_NAME:$publish_tag" | gzip -1 > "$CI_DOCKER_IMAGE_ARCHIVE"
     echo "Saved Docker image artifact: $CI_DOCKER_IMAGE_ARCHIVE"
