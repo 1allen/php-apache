@@ -1,29 +1,35 @@
 version: v1.0
-name: php-apache semaphore ci
+name: php-apache image pipeline
 agent:
   machine:
     type: e1-standard-2
     os_image: ubuntu2404
+global_job_config:
+  prologue:
+    commands:
+      - checkout
 blocks:
   - name: build image
-    dependencies: []
     run:
       when: "pull_request =~ '^.+$' OR branch = 'latest'"
     task:
+      env_vars:
+        - name: CI_DOCKER_MODE
+          value: build
       jobs:
         - name: docker build
           commands:
-            - checkout
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build bash scripts/ci/docker_build.sh
+            - &run_docker_ci CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
   - name: publish image
-    dependencies: []
     run:
       when: "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
     task:
+      env_vars:
+        - name: CI_DOCKER_MODE
+          value: build-publish
       jobs:
         - name: docker publish
           commands:
-            - checkout
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build-publish bash scripts/ci/docker_build.sh
+            - *run_docker_ci
       secrets:
         - name: dockerhub-1allen

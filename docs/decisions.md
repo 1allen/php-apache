@@ -16,6 +16,17 @@ CI-provider-specific YAML should stay as a thin adapter. The stable interface is
 `CI_GIT_REF_TYPE` inputs, because this project expects to move off Semaphore CI
 eventually.
 
+## Post-Publish Security Scan
+
+Final image scanning belongs after `docker push` while the project is still
+using advisory vulnerability scans. The scan should target the exact pushed
+Docker Hub ref for each `phpXX` branch or version-like tag and should not block
+publishing until the project deliberately promotes it to a gate.
+
+Keep this in `scripts/ci/docker_build.sh` so the behavior follows the image
+publish path across CI providers. Semaphore YAML may install or provide scanner
+tooling, but it should not own the scan policy.
+
 ## Stage ImageMagick With DESTDIR
 
 ImageMagick should be configured with its runtime prefix as `/usr/local` and

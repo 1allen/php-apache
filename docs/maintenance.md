@@ -37,6 +37,10 @@ As of 2026-06-24:
   and pushes from the same job. Ordinary feature-branch push workflows should
   avoid Docker work when a PR workflow exists, while preserving publish builds
   for version branches and version-like tags.
+- After a successful publish, CI runs a Trivy scan against the final pushed
+  image ref. This scan is advisory and non-blocking for now; failed scans should
+  be reviewed but should not fail publishing until the project intentionally
+  promotes the scan to a pre-publish or publish gate.
 - Semaphore does not pass Docker image artifacts between jobs. A saved Docker
   image is large, has awkward ref-specific naming, and adds artifact storage
   cost without a clear win for this small pipeline.
@@ -154,6 +158,11 @@ CI_GIT_BRANCH=latest bash scripts/ci/docker_build.sh
 CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh
 CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
 ```
+
+The publish path runs `aquasec/trivy:latest` by default after `docker push`.
+Override `TRIVY_IMAGE` when testing a different scanner image. The scan is
+non-blocking, so a scanner outage or vulnerability finding is reported without
+failing the publish job.
 
 If the local Docker build is not practical, still run the shell test and review
 the Dockerfile diff carefully. The real build happens in Semaphore. After
