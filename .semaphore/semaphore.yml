@@ -2,32 +2,28 @@ version: v1.0
 name: php-apache semaphore ci
 agent:
   machine:
-    type: f1-standard-2
+    type: e1-standard-2
     os_image: ubuntu2404
 blocks:
-  - name: build
-    skip:
-      when: "branch = 'master'"
+  - name: build image
+    dependencies: []
+    run:
+      when: "pull_request =~ '^.+$' OR branch = 'latest'"
     task:
-      prologue:
-        commands:
-          - echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
       jobs:
-        - name: docker build & push
+        - name: docker build
           commands:
             - checkout
-            - IMAGE_TAG=${SEMAPHORE_GIT_TAG_NAME:-$SEMAPHORE_GIT_BRANCH}
-            - docker pull "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" || true
-            - docker pull "$BUILDER_IMAGE" || true
-            - docker build --pull --cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG" --cache-from "$BUILDER_IMAGE" -f Dockerfile.ubuntu -t "$IMAGE_NAME:$IMAGE_TAG" .
-            - docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-            - docker push "$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build bash scripts/ci/docker_build.sh
+  - name: publish image
+    dependencies: []
+    run:
+      when: "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
+    task:
+      jobs:
+        - name: docker publish
+          commands:
+            - checkout
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_DOCKER_MODE=build-publish bash scripts/ci/docker_build.sh
       secrets:
         - name: dockerhub-1allen
-      env_vars:
-        - name: DOCKER_USERNAME
-          value: 1allen
-        - name: IMAGE_NAME
-          value: php-apache
-        - name: BUILDER_IMAGE
-          value: spritsail/debian-builder:latest
