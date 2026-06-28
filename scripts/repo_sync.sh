@@ -26,18 +26,20 @@ usage() {
 Usage:
   bash scripts/repo_sync.sh status
   bash scripts/repo_sync.sh sync-shared [--apply] [branch...]
-  bash scripts/repo_sync.sh verify-image-tooling [--legacy|--all] [branch...]
+  bash scripts/repo_sync.sh verify-image-tooling [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
 Commands:
   status             Show configured branches, local/remote branches, shared files,
                      and advisory upstream Docker Hub tags.
   sync-shared        Sync shared files from the source branch into local PHP branches.
-                     Dry-run by default. Use --apply to create branch-local commits.
+                     Dry-run by default. Targets supported branches only unless
+                     explicit branches are provided.
+                     Use --apply to create branch-local commits.
   verify-image-tooling
                      Check that supported branch Dockerfiles include the image
                      tooling expected by downstream custom images.
-                     Use --legacy to include legacy branches or --all for both.
+                     Pass branch names explicitly to check a narrower or older set.
   bootstrap-version  Create a new local PHP branch from the source branch and rewrite
                      Dockerfile.ubuntu to the requested PHP version. Dry-run by default.
 EOF
@@ -64,12 +66,41 @@ branch_in_list() {
     return 1
 }
 
+php_extension_installer_source_present() {
+    local dockerfile_content="$1"
+    local image_ref
+
+    # shellcheck disable=SC2016
+    if [[ "$dockerfile_content" == *'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'* ]] \
+        && [[ "$dockerfile_content" == *"ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"* ]]; then
+        return 0
+    fi
+
+    for image_ref in "${PHP_EXTENSION_INSTALLER_IMAGE_REFS[@]}"; do
+        [[ "$dockerfile_content" == *"FROM $image_ref AS php-extension-installer"* ]] && return 0
+    done
+
+    return 1
+}
+
 branch_exists_local() {
     git -C "$ROOT_DIR" show-ref --verify --quiet "refs/heads/$1"
 }
 
-branch_exists_remote() {
-    git -C "$ROOT_DIR" show-ref --verify --quiet "refs/remotes/origin/$1"
+current_branch() {
+    git -C "$ROOT_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true
+}
+
+use_worktree_as_source_branch() {
+    local requested_branch="$1"
+    local current="$2"
+
+    [[ "$requested_branch" == "$BOOTSTRAP_SOURCE_BRANCH" ]] || return 1
+    [[ -n "$current" ]] || return 1
+    [[ "$current" == "$BOOTSTRAP_SOURCE_BRANCH" ]] && return 0
+    branch_in_list "$current" "${SUPPORTED_PHP_BRANCHES[@]}" "${LEGACY_PHP_BRANCHES[@]}" && return 1
+
+    return 0
 }
 
 require_clean_worktree() {
@@ -98,20 +129,16 @@ print_section() {
     done
 }
 
-print_named_section() {
+print_array_section() {
     local title="$1"
-    local array_name="$2"
-    local array_length=0
-    local items=()
+    shift
+    local -a items=("$@")
 
-    eval "array_length=\${#$array_name[@]}"
-
-    if [[ "$array_length" -eq 0 ]]; then
+    if [[ "${#items[@]}" -eq 0 ]]; then
         print_section "$title"
         return
     fi
 
-    eval "items=(\"\${$array_name[@]}\")"
     print_section "$title" "${items[@]}"
 }
 
@@ -121,7 +148,7 @@ load_upstream_branches() {
     fi
 
     local response
-    if ! response="$(curl -fsSL "$UPSTREAM_IMAGE_TAGS_URL" 2>/dev/null)"; then
+    if ! response="$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15 "$UPSTREAM_IMAGE_TAGS_URL" 2>/dev/null)"; then
         return
     fi
 
@@ -181,11 +208,11 @@ status_command() {
         [[ -n "$branch" ]] && upstream_branches+=("$branch")
     done < <(load_upstream_branches || true)
 
-    print_named_section "Configured PHP branches:" configured
-    print_named_section "Local PHP branches:" local_branches
-    print_named_section "Remote PHP branches:" remote_branches
-    print_named_section "Configured branches missing locally:" missing_local
-    print_named_section "Shared files:" SHARED_FILES
+    print_array_section "Configured PHP branches:" "${configured[@]+"${configured[@]}"}"
+    print_array_section "Local PHP branches:" "${local_branches[@]+"${local_branches[@]}"}"
+    print_array_section "Remote PHP branches:" "${remote_branches[@]+"${remote_branches[@]}"}"
+    print_array_section "Configured branches missing locally:" "${missing_local[@]+"${missing_local[@]}"}"
+    print_array_section "Shared files:" "${SHARED_FILES[@]}"
 
     if [[ ${#upstream_branches[@]} -gt 0 ]]; then
         local upstream_missing=()
@@ -194,8 +221,8 @@ status_command() {
             branch_in_list "$branch" "${configured[@]}" || upstream_missing+=("$branch")
         done
 
-        print_named_section "Upstream PHP branches from Docker Hub:" upstream_branches
-        print_named_section "Configured branches missing from manifest:" upstream_missing
+        print_array_section "Upstream PHP branches from Docker Hub:" "${upstream_branches[@]+"${upstream_branches[@]}"}"
+        print_array_section "Configured branches missing from manifest:" "${upstream_missing[@]+"${upstream_missing[@]}"}"
     else
         echo "Upstream PHP branches from Docker Hub:"
         echo "  - unavailable (network or curl not available)"
@@ -218,6 +245,9 @@ sync_shared_command() {
             --apply)
                 apply=1
                 ;;
+            -*)
+                die "Unknown sync-shared option: $1"
+                ;;
             *)
                 target_branches+=("$1")
                 ;;
@@ -226,9 +256,7 @@ sync_shared_command() {
     done
 
     if [[ ${#target_branches[@]} -eq 0 ]]; then
-        while IFS= read -r branch; do
-            [[ -n "$branch" ]] && target_branches+=("$branch")
-        done < <(all_configured_branches)
+        target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
     prepare_temp_root
@@ -293,30 +321,26 @@ sync_shared_command() {
 
 verify_image_tooling_command() {
     local target_branches=()
-    local include_legacy=0
-    local include_supported=1
     local branch
     local dockerfile_content
     local marker
     local missing_markers=()
     local failed=0
+    local current
+    # shellcheck disable=SC2016
     local required_markers=(
-        'FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer'
         'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
+        'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
         'install-php-extensions gmp'
+        'docker-php-ext-configure imagick --with-imagick=/usr/local'
         'https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz'
         'https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz'
     )
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --legacy)
-                include_supported=0
-                include_legacy=1
-                ;;
-            --all)
-                include_supported=1
-                include_legacy=1
+            -*)
+                die "Unknown verify-image-tooling option: $1"
                 ;;
             *)
                 target_branches+=("$1")
@@ -327,17 +351,11 @@ verify_image_tooling_command() {
 
     if [[ ${#target_branches[@]} -eq 0 ]]; then
         target_branches+=("$BOOTSTRAP_SOURCE_BRANCH")
-
-        if [[ $include_supported -eq 1 ]]; then
-            target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
-        fi
-
-        if [[ $include_legacy -eq 1 ]]; then
-            target_branches+=("${LEGACY_PHP_BRANCHES[@]}")
-        fi
+        target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
     print_section "Image tooling branches:" "${target_branches[@]}"
+    current="$(current_branch)"
 
     for branch in "${target_branches[@]}"; do
         missing_markers=()
@@ -348,10 +366,20 @@ verify_image_tooling_command() {
             continue
         fi
 
-        if ! dockerfile_content="$(git -C "$ROOT_DIR" show "$branch:Dockerfile.ubuntu" 2>/dev/null)"; then
+        if [[ "$branch" == "$current" ]] || use_worktree_as_source_branch "$branch" "$current"; then
+            if ! dockerfile_content="$(cat "$ROOT_DIR/Dockerfile.ubuntu" 2>/dev/null)"; then
+                echo "$branch: missing Dockerfile.ubuntu."
+                failed=1
+                continue
+            fi
+        elif ! dockerfile_content="$(git -C "$ROOT_DIR" show "$branch:Dockerfile.ubuntu" 2>/dev/null)"; then
             echo "$branch: missing Dockerfile.ubuntu."
             failed=1
             continue
+        fi
+
+        if ! php_extension_installer_source_present "$dockerfile_content"; then
+            missing_markers+=("php-extension-installer source from config/php-branches.conf")
         fi
 
         for marker in "${required_markers[@]}"; do
