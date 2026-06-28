@@ -1,0 +1,30 @@
+version: v1.0
+name: php-apache publish pipeline
+agent:
+  machine:
+    type: e1-standard-2
+    os_image: ubuntu2404
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+blocks:
+  - name: publish image
+    task:
+      env_vars:
+        - name: CI_DOCKER_MODE
+          value: build-publish
+      jobs:
+        - name: docker publish
+          commands:
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+      secrets:
+        - name: dockerhub-1allen
+  - name: scan published image
+    dependencies:
+      - publish image
+    task:
+      jobs:
+        - name: trivy scan
+          commands:
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/trivy_scan.sh
