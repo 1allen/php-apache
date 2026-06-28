@@ -37,6 +37,12 @@ As of 2026-06-24:
   auto-promote to `.semaphore/publish.yml`, which has explicit `publish image`
   and `scan published image` blocks. This keeps PR workflows to one visible
   build block while preserving a structured publish flow for release refs.
+- Semaphore project triggers still control whether GitHub receives both
+  `ci/semaphoreci/pr` and `ci/semaphoreci/push` statuses for a PR branch
+  commit. YAML `run.when` can skip blocks, but it cannot prevent Semaphore from
+  creating a push workflow/status. In Semaphore project settings, keep pull
+  requests enabled, allow branch workflows only for `latest` and supported
+  `phpXX` branches, and allow tag workflows only for version-like tags.
 - After a successful publish, the promoted publish pipeline runs
   `scripts/ci/trivy_scan.sh` against the final pushed image ref. This scan is
   advisory and non-blocking for now; failed scans should be reviewed but should

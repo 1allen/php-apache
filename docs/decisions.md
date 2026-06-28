@@ -16,6 +16,11 @@ CI-provider-specific YAML should stay as a thin adapter. The stable interface is
 `CI_GIT_REF_TYPE` inputs, because this project expects to move off Semaphore CI
 eventually.
 
+Semaphore trigger selection is a project setting, not a pipeline-block concern.
+Use YAML to describe the build and publish flow, but use Semaphore's "What to
+build" settings to avoid duplicate PR statuses from both pull-request and
+ordinary branch-push workflows.
+
 ## Post-Publish Security Scan
 
 Final image scanning belongs in a separate post-publish step while the project
