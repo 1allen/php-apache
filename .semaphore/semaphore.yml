@@ -7,8 +7,8 @@ agent:
 blocks:
   - name: build image
     dependencies: []
-    skip:
-      when: "tag =~ '^.+$' OR branch =~ '^php[0-9][0-9]$'"
+    run:
+      when: "pull_request =~ '^.+$' OR branch = 'latest'"
     task:
       jobs:
         - name: docker build
@@ -24,8 +24,8 @@ blocks:
           value: "1"
   - name: publish image
     dependencies: []
-    skip:
-      when: "tag !~ '^.+$' AND branch !~ '^php[0-9][0-9]$'"
+    run:
+      when: "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
     task:
       jobs:
         - name: docker publish

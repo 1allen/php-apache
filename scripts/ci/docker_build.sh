@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/config/php-branches.conf"
 
 DOCKERFILE_PATH="${DOCKERFILE_PATH:-Dockerfile.ubuntu}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
@@ -46,16 +48,6 @@ docker_pull_cache_source() {
     docker pull "$image_ref" || true
 }
 
-if [[ -n "$CI_GIT_TAG" ]]; then
-    publish_tag="$CI_GIT_TAG"
-    publish_image=1
-elif [[ "$CI_GIT_BRANCH" =~ ^php[0-9][0-9]$ ]]; then
-    publish_tag="$CI_GIT_BRANCH"
-    publish_image=1
-fi
-
-cd "$ROOT_DIR"
-
 case "$CI_DOCKER_MODE" in
     build|build-publish)
         ;;
@@ -64,8 +56,26 @@ case "$CI_DOCKER_MODE" in
         ;;
 esac
 
+if [[ "$CI_DOCKER_MODE" == "build-publish" && "$CI_GIT_REF_TYPE" == "pull-request" ]]; then
+    die "Refusing to publish from pull-request ref."
+fi
+
+if [[ -n "$CI_GIT_TAG" ]]; then
+    if [[ "$CI_GIT_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
+        publish_tag="$CI_GIT_TAG"
+        publish_image=1
+    elif [[ "$CI_DOCKER_MODE" == "build-publish" ]]; then
+        die "Refusing to publish non-version tag: $CI_GIT_TAG."
+    fi
+elif [[ "$CI_GIT_REF_TYPE" != "pull-request" && "$CI_GIT_BRANCH" =~ ^php[0-9][0-9]$ ]]; then
+    publish_tag="$CI_GIT_BRANCH"
+    publish_image=1
+fi
+
+cd "$ROOT_DIR"
+
 if [[ "$publish_image" -eq 0 && "$CI_GIT_BRANCH" != "latest" && "$CI_GIT_REF_TYPE" != "pull-request" ]]; then
-    echo "Non-publish branch push: skipping Docker build"
+    echo "Non-publish ref: skipping Docker build"
     exit 0
 fi
 

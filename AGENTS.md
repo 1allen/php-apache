@@ -7,7 +7,11 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 
 - Keep shared maintenance edits on the `latest` branch first.
 - Treat `config/php-branches.conf` as the source of truth for supported PHP
-  branches and shared files.
+  branches, shared files, CI constants, publish tag patterns, and accepted
+  installer image refs.
+- Treat `docs/README.md` as the documentation map and `docs/maintenance.md` as
+  the human runbook. Link to those files instead of spreading duplicate project
+  policy across README, agent notes, and ADRs.
 - Keep `AGENTS.md`, `README.md`, `docs/maintenance.md`, scripts, config, and
   CI changes in `SHARED_FILES` when they should propagate to PHP version
   branches.
@@ -25,10 +29,10 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
 ## Dockerfile Rules
 
 - `Dockerfile.ubuntu` is the maintained image path.
-- The first stage copies `/usr/bin/install-php-extensions` from
-  `ghcr.io/mlocati/php-extension-installer:latest` into the final image. Keep
-  that binary in the final image so downstream images can install more
-  extensions without fetching the installer again.
+- The first stage copies `/usr/bin/install-php-extensions` from the installer
+  image configured in `config/php-branches.conf` into the final image. Keep that
+  binary in the final image so downstream images can install more extensions
+  without fetching the installer again.
 - Prefer `install-php-extensions` for ordinary extensions and downstream image
   customization, for example:
 
@@ -59,8 +63,9 @@ ImageMagick and PECL `imagick` than the upstream base image usually carries.
   smoke builds secret-free. For `phpXX` branches and git tags, run the Docker
   Hub publish block only once and do not also run the smoke build.
 - Keep Docker build and publish logic in `scripts/ci/docker_build.sh`; CI
-  declaration files should only checkout, map provider-specific branch/tag
-  variables to `CI_GIT_BRANCH` and `CI_GIT_TAG`, and call that script.
+  declaration files should only checkout, map provider-specific branch/tag/ref
+  variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and `CI_GIT_REF_TYPE`, and call
+  that script. Semaphore is the current adapter, not a permanent coupling point.
 - Keep the Semaphore machine type on the smallest Ubuntu x64 2-vCPU option that
   passes the Docker build. Prefer `e1-standard-2`; bump only with a failing
   build that shows memory or disk pressure.

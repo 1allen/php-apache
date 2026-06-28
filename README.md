@@ -9,8 +9,10 @@ Upstream base image:
 Upstream source repository:
 [webdevops/Dockerfile on GitHub](https://github.com/webdevops/Dockerfile).
 
-See [docs/maintenance.md](docs/maintenance.md) for the full update runbook and
-[AGENTS.md](AGENTS.md) for AI/agent-specific maintenance notes.
+See [docs/README.md](docs/README.md) for the documentation map,
+[docs/maintenance.md](docs/maintenance.md) for the full update runbook,
+[docs/decisions.md](docs/decisions.md) for durable decisions, and [AGENTS.md](AGENTS.md)
+for AI/agent-specific maintenance notes.
 
 `latest` is the integration branch for shared maintenance updates. Published PHP
 versions continue to live on their own `phpXX` branches because the Docker build
@@ -30,8 +32,8 @@ PHP branch history.
 
 - PR branches and pushes to `latest` run build-only checks and do not publish
   Docker images or receive Docker Hub secrets
-- ordinary feature-branch push workflows are skipped when a PR workflow exists,
-  so the same commit is not built twice
+- ordinary feature-branch push workflows should not run Docker work when a PR
+  workflow exists, so the same commit is not built twice
 - pushes to `phpXX` branches publish branch-specific image tags
 - git tags such as `8.4` publish tag-specific images
 - Semaphore uses BuildKit inline cache metadata and pulls both the target tag
@@ -44,8 +46,10 @@ PHP branch history.
   bump only if the Docker build proves it needs more memory or disk.
 
 The Docker build and publish logic lives in `scripts/ci/docker_build.sh` so CI
-configuration stays thin. Other CI providers can call the same script by setting
-`CI_GIT_BRANCH` and `CI_GIT_TAG` from their native branch/tag variables.
+configuration stays thin. Semaphore is the current adapter, not the permanent
+interface. Other CI providers should call the same script by setting
+`CI_GIT_BRANCH`, `CI_GIT_TAG`, and `CI_GIT_REF_TYPE` from their native ref
+variables.
 
 For PHP `8.5`, the Ubuntu Dockerfile now pins `imagick 3.8.1`, which is the
 first recent PECL release line compatible with PHP `8.5`.
@@ -159,8 +163,10 @@ bash scripts/repo_sync.sh verify-image-tooling
 ## LLM / automation notes
 
 - Treat `config/php-branches.conf` as the source of truth for supported branches
-  and shared files.
-- Keep `AGENTS.md` and `docs/maintenance.md` in sync with Dockerfile behavior.
+  shared files, CI constants, publish tag patterns, and accepted installer image
+  refs.
+- Keep detailed process in `docs/maintenance.md`; keep `README.md` and
+  `AGENTS.md` as short pointers to the maintained sources of truth.
 - Keep `.dockerignore` in shared-file sync so CI build contexts stay small on
   every PHP branch.
 - Preserve SHA-256 verification for ImageMagick and PECL `imagick` downloads.

@@ -66,6 +66,23 @@ branch_in_list() {
     return 1
 }
 
+php_extension_installer_source_present() {
+    local dockerfile_content="$1"
+    local image_ref
+
+    # shellcheck disable=SC2016
+    if [[ "$dockerfile_content" == *'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'* ]] \
+        && [[ "$dockerfile_content" == *"ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"* ]]; then
+        return 0
+    fi
+
+    for image_ref in "${PHP_EXTENSION_INSTALLER_IMAGE_REFS[@]}"; do
+        [[ "$dockerfile_content" == *"FROM $image_ref AS php-extension-installer"* ]] && return 0
+    done
+
+    return 1
+}
+
 branch_exists_local() {
     git -C "$ROOT_DIR" show-ref --verify --quiet "refs/heads/$1"
 }
@@ -122,14 +139,16 @@ print_named_section() {
     local array_length=0
     local items=()
 
-    eval "array_length=\${#$array_name[@]}"
+    # shellcheck disable=SC1087
+    eval "array_length=\${#${array_name}[@]}"
 
     if [[ "$array_length" -eq 0 ]]; then
         print_section "$title"
         return
     fi
 
-    eval "items=(\"\${$array_name[@]}\")"
+    # shellcheck disable=SC1087
+    eval "items=(\"\${${array_name}[@]}\")"
     print_section "$title" "${items[@]}"
 }
 
@@ -318,8 +337,8 @@ verify_image_tooling_command() {
     local missing_markers=()
     local failed=0
     local current
+    # shellcheck disable=SC2016
     local required_markers=(
-        'FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer'
         'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
         'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
         'install-php-extensions gmp'
@@ -367,6 +386,10 @@ verify_image_tooling_command() {
             echo "$branch: missing Dockerfile.ubuntu."
             failed=1
             continue
+        fi
+
+        if ! php_extension_installer_source_present "$dockerfile_content"; then
+            missing_markers+=("php-extension-installer source from config/php-branches.conf")
         fi
 
         for marker in "${required_markers[@]}"; do

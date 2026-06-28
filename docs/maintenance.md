@@ -14,6 +14,8 @@ Upstream references:
 - mlocati PHP extension installer:
   `https://github.com/mlocati/docker-php-extension-installer`
 
+Related project decisions are recorded in `docs/decisions.md`.
+
 ## Current Image Decisions
 
 As of 2026-06-24:
@@ -25,24 +27,26 @@ As of 2026-06-24:
 - ImageMagick and PECL `imagick` source archives are verified with SHA-256
   checksums in `Dockerfile.ubuntu`.
 - `install-php-extensions` is copied from
-  `ghcr.io/mlocati/php-extension-installer:latest` into `/usr/local/bin`.
+  the installer image configured in `config/php-branches.conf` into
+  `/usr/local/bin`.
 - CI enables BuildKit inline cache metadata and uses both the target image tag
   and `latest` as cache sources. PR branches and `latest` are build-only;
   Docker Hub publishing is reserved for `phpXX` branches and git tags.
 - Semaphore uses a secret-free build block for PRs and `latest`. Publishable
   `phpXX` branches and git tags use a separate Docker Hub block that builds once
-  and pushes from the same job. Ordinary feature-branch push workflows enter the
-  build block but exit before Docker starts, using `SEMAPHORE_GIT_REF_TYPE` to
-  distinguish push and PR workflows. This keeps a PR branch from building the
-  same commit once as a push and once as a PR, while preserving publish builds
-  for version branches and tags.
+  and pushes from the same job. Ordinary feature-branch push workflows should
+  avoid Docker work when a PR workflow exists, while preserving publish builds
+  for version branches and version-like tags.
 - Semaphore does not pass Docker image artifacts between jobs. A saved Docker
   image is large, has awkward ref-specific naming, and adds artifact storage
   cost without a clear win for this small pipeline.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
-  the Docker build and publish shell logic. New CI providers should map their
-  native branch/tag variables to `CI_GIT_BRANCH` and `CI_GIT_TAG` before calling
-  that script.
+  the Docker build and publish shell logic. Semaphore is the current CI adapter,
+  not the long-term interface. New CI providers should map their native
+  branch/tag/ref variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
+  `CI_GIT_REF_TYPE` before calling that script.
+- Publish-capable git tags must match the version-like tag pattern in
+  `config/php-branches.conf`.
 - Semaphore uses `e1-standard-2` to keep build-only PR checks on the smallest
   Ubuntu x64 2-vCPU machine. If ImageMagick builds fail from memory or disk
   pressure, use `f1-standard-2` as the next fallback and document the failure.

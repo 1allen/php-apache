@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 
 set -euo pipefail
 
@@ -34,6 +35,9 @@ assert_file_contains() {
     echo "Missing manifest: $MANIFEST_PATH" >&2
     exit 1
 }
+
+# shellcheck disable=SC1090
+source "$MANIFEST_PATH"
 
 [[ -x "$SCRIPT_PATH" ]] || {
     echo "Missing executable sync script: $SCRIPT_PATH" >&2
@@ -72,7 +76,18 @@ assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb'
-assert_file_contains "$DOCKERFILE_PATH" 'ghcr.io/mlocati/php-extension-installer:latest'
+[[ -n "$PHP_EXTENSION_INSTALLER_IMAGE" ]] || {
+    echo "Expected PHP_EXTENSION_INSTALLER_IMAGE to be configured." >&2
+    exit 1
+}
+
+[[ -n "$PUBLISH_TAG_PATTERN" ]] || {
+    echo "Expected PUBLISH_TAG_PATTERN to be configured." >&2
+    exit 1
+}
+
+assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
+assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
 assert_file_contains "$DOCKERFILE_PATH" 'curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15'
 assert_file_contains "$DOCKERFILE_PATH" 'sha256sum -c -'
 assert_file_contains "$DOCKERFILE_PATH" 'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
@@ -87,10 +102,10 @@ assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" "tag =~ '^.+$' OR branch =~ '^php[0-9][0-9]$'"
+assert_file_contains "$SEMAPHORE_PATH" "pull_request =~ '^.+$' OR branch = 'latest'"
 assert_file_contains "$SEMAPHORE_PATH" 'name: publish image'
 assert_file_contains "$SEMAPHORE_PATH" 'dependencies:'
-assert_file_contains "$SEMAPHORE_PATH" "tag !~ '^.+$' AND branch !~ '^php[0-9][0-9]$'"
+assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN')"
 assert_file_contains "$SEMAPHORE_PATH" 'DOCKER_BUILDKIT'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
@@ -109,8 +124,12 @@ smoke = blocks.find { |block| block["name"] == "build image" } or abort "Missing
 publish = blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
 
 abort "Build image block must define empty dependencies" unless smoke.fetch("dependencies") == []
+abort "Build image block must run only for PRs and latest" unless smoke.fetch("run").fetch("when") == "pull_request =~ '^.+$' OR branch = 'latest'"
 abort "Build image block must not receive secrets" if smoke.fetch("task", {}).key?("secrets")
 abort "Publish image block must define empty dependencies" unless publish.fetch("dependencies") == []
+unless publish.fetch("run").fetch("when").include?("pull_request !~ '^.+$'")
+    abort "Publish image block must exclude pull requests"
+end
 unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
     abort "Publish image block must receive dockerhub-1allen secret"
 end
@@ -121,11 +140,6 @@ if grep -q "name: BUILDER_IMAGE" "$SEMAPHORE_PATH"; then
     exit 1
 fi
 
-if grep -q "branch =~ '^php'" "$SEMAPHORE_PATH"; then
-    echo "Expected Semaphore config to build phpXX branches." >&2
-    exit 1
-fi
-
 assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
 assert_file_contains "$SCRIPT_PATH" 'worktree prune'
 assert_file_contains "$SCRIPT_PATH" 'use_worktree_as_source_branch'
@@ -133,8 +147,10 @@ assert_file_contains "$SCRIPT_PATH" 'curl -fsSL --retry 3 --retry-connrefused --
 assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
 assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [branch...]'
 assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
+assert_file_contains "$SCRIPT_PATH" 'php_extension_installer_source_present'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDKIT_INLINE_CACHE=1'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/config/php-branches.conf"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "branch"'
@@ -142,7 +158,9 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "tag
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[@]}" "$BUILD_CONTEXT"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish branch push: skipping Docker build'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish from pull-request ref.'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish non-version tag'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish ref: skipping Docker build'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
@@ -154,9 +172,11 @@ tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
 assert_contains "$tooling_output" "latest: ok"
 
-supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling || true)"
+supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling)"
 assert_contains "$supported_tooling_output" "php80"
 assert_contains "$supported_tooling_output" "php85"
+assert_contains "$supported_tooling_output" "php80: ok"
+assert_contains "$supported_tooling_output" "php85: ok"
 
 legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling php73 php74 || true)"
 assert_contains "$legacy_tooling_output" "php73"
@@ -178,7 +198,7 @@ EOF
 chmod +x "$TMP_DOCKER_BIN/docker"
 
 feature_push_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=feature/test CI_GIT_REF_TYPE=branch bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
-assert_contains "$feature_push_ci_output" 'Non-publish branch push: skipping Docker build'
+assert_contains "$feature_push_ci_output" 'Non-publish ref: skipping Docker build'
 if [[ -s "$CI_DOCKER_LOG" ]]; then
     echo "Expected ordinary feature branch push to avoid Docker commands." >&2
     exit 1
@@ -189,6 +209,15 @@ assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_
 assert_contains "$build_only_ci_output" 'Build-only branch: not publishing image'
 if grep -Fq -- '-t php-apache:' "$CI_DOCKER_LOG"; then
     echo "Expected latest build-only CI run to avoid tagging the image." >&2
+    exit 1
+fi
+
+: > "$CI_DOCKER_LOG"
+pr_target_branch_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu .'
+assert_contains "$pr_target_branch_output" 'Build-only branch: not publishing image'
+if grep -Fq -- '-t php-apache:' "$CI_DOCKER_LOG"; then
+    echo "Expected pull-request build-only CI run to avoid tagging the image." >&2
     exit 1
 fi
 
@@ -206,6 +235,20 @@ PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DO
 assert_file_contains "$CI_DOCKER_LOG" 'docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from 1allen/php-apache:php85 --cache-from 1allen/php-apache:latest --cache-from spritsail/debian-builder:latest -f Dockerfile.ubuntu -t php-apache:php85 .'
 assert_file_contains "$CI_DOCKER_LOG" 'docker login -u 1allen --password-stdin'
 assert_file_contains "$CI_DOCKER_LOG" 'docker push 1allen/php-apache:php85'
+
+: > "$CI_DOCKER_LOG"
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >/tmp/repo-sync-pr-publish.out 2>&1; then
+    echo "Expected pull-request build-publish mode to fail." >&2
+    exit 1
+fi
+assert_file_contains /tmp/repo-sync-pr-publish.out 'Refusing to publish from pull-request ref.'
+
+: > "$CI_DOCKER_LOG"
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=latest CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >/tmp/repo-sync-tag-publish.out 2>&1; then
+    echo "Expected non-version tag publish to fail." >&2
+    exit 1
+fi
+assert_file_contains /tmp/repo-sync-tag-publish.out 'Refusing to publish non-version tag: latest.'
 rm -rf "$TMP_DOCKER_BIN"
 
 TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
