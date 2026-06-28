@@ -7,11 +7,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/config/php-branches.conf"
 
 DRY_RUN=1
+target_branches=()
 
 convert_branch_to_tag() {
     local branch_name="$1"
     local version="${branch_name#php}"
-    echo "${version:0:1}.${version:1:1}"
+    echo "${version:0:1}.${version:1}"
 }
 
 run_cmd() {
@@ -23,14 +24,19 @@ run_cmd() {
     "$@"
 }
 
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
 usage() {
     cat <<'EOF'
 Usage:
-  bash scripts/tags_update.sh
-  bash scripts/tags_update.sh --apply
+  bash scripts/tags_update.sh [--apply] [branch...]
 
-By default this prints the tag actions it would take for the configured PHP
-branches that exist on origin. Use --apply to push the tag updates.
+By default this prints the tag actions it would take for supported PHP branches
+that exist on origin. Pass branch names explicitly for a narrower or older set.
+Use --apply to push the tag updates.
 EOF
 }
 
@@ -43,10 +49,13 @@ while [[ $# -gt 0 ]]; do
             usage
             exit 0
             ;;
-        *)
+        -*)
             echo "Unknown option: $1" >&2
             usage >&2
             exit 1
+            ;;
+        *)
+            target_branches+=("$1")
             ;;
     esac
     shift
@@ -54,7 +63,13 @@ done
 
 git -C "$ROOT_DIR" fetch --all --tags
 
-for branch in "${SUPPORTED_PHP_BRANCHES[@]}" "${LEGACY_PHP_BRANCHES[@]}"; do
+if [[ ${#target_branches[@]} -eq 0 ]]; then
+    target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")
+fi
+
+for branch in "${target_branches[@]}"; do
+    [[ "$branch" =~ ^php[0-9][0-9]$ ]] || die "Branch must look like php85: $branch"
+
     if ! git -C "$ROOT_DIR" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
         echo "Skipping $branch: missing origin/$branch"
         continue
