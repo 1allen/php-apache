@@ -19,7 +19,13 @@ blocks:
       jobs:
         - name: docker build
           commands:
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+            - |
+              export DOCKER_BUILDX_CACHE_DIR=.cache/docker-buildx
+              cache_ref="${SEMAPHORE_GIT_BRANCH:-${SEMAPHORE_GIT_TAG_NAME:-detached}}"
+              cache_ref="${cache_ref//[^A-Za-z0-9_.-]/-}"
+              cache restore "docker-buildx-${cache_ref},docker-buildx-latest" || true
+              CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+              cache store "docker-buildx-${cache_ref},docker-buildx-latest" "$DOCKER_BUILDX_CACHE_DIR" || true
 promotions:
   - name: publish final image
     pipeline_file: publish.yml

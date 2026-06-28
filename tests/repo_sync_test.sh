@@ -140,6 +140,10 @@ assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
+assert_file_contains "$SEMAPHORE_PATH" 'export DOCKER_BUILDX_CACHE_DIR=.cache/docker-buildx'
+assert_file_contains "$SEMAPHORE_PATH" 'cache_ref="${cache_ref//[^A-Za-z0-9_.-]/-}"'
+assert_file_contains "$SEMAPHORE_PATH" 'cache restore "docker-buildx-${cache_ref},docker-buildx-latest" || true'
+assert_file_contains "$SEMAPHORE_PATH" 'cache store "docker-buildx-${cache_ref},docker-buildx-latest" "$DOCKER_BUILDX_CACHE_DIR" || true'
 assert_file_contains "$SEMAPHORE_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PATH" 'value: build'
 assert_file_contains "$SEMAPHORE_PATH" 'promotions:'
@@ -156,6 +160,9 @@ assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dependencies:'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" '- publish image'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/trivy_scan.sh'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'export DOCKER_BUILDX_CACHE_DIR=.cache/docker-buildx'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'cache restore "docker-buildx-${cache_ref},docker-buildx-latest" || true'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'cache store "docker-buildx-${cache_ref},docker-buildx-latest" "$DOCKER_BUILDX_CACHE_DIR" || true'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'value: build-publish'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dockerhub-1allen'
@@ -207,6 +214,10 @@ assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [branch...]'
 assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
 assert_file_contains "$SCRIPT_PATH" 'php_extension_installer_source_present'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDKIT_INLINE_CACHE=1'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'DOCKER_BUILDX_CACHE_DIR="${DOCKER_BUILDX_CACHE_DIR:-}"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker buildx build --load "${build_args[@]}" "$BUILD_CONTEXT"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-from "type=local,src=$DOCKER_BUILDX_CACHE_DIR"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-to "type=local,dest=$DOCKER_BUILDX_CACHE_NEXT_DIR,mode=max"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'DOCKER_USERNAME="${DOCKER_USERNAME:-$DEFAULT_DOCKER_USERNAME}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"'
@@ -287,6 +298,12 @@ if grep -Fq -- "-t $DEFAULT_IMAGE_NAME:" "$CI_DOCKER_LOG"; then
     echo "Expected latest build-only CI run to avoid tagging the image." >&2
     exit 1
 fi
+
+: > "$CI_DOCKER_LOG"
+mkdir -p "$TMP_DOCKER_BIN/buildx-cache"
+buildx_cache_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest DOCKER_BUILDX_CACHE_DIR="$TMP_DOCKER_BIN/buildx-cache" bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_file_contains "$CI_DOCKER_LOG" "docker buildx build --load --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu --cache-from type=local,src=$TMP_DOCKER_BIN/buildx-cache --cache-to type=local,dest=$TMP_DOCKER_BIN/buildx-cache-next,mode=max ."
+assert_contains "$buildx_cache_output" 'Build-only branch: not publishing image'
 
 : > "$CI_DOCKER_LOG"
 pr_target_branch_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"

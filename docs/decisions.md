@@ -21,6 +21,19 @@ Use YAML to describe the build and publish flow, but use Semaphore's "What to
 build" settings to avoid duplicate PR statuses from both pull-request and
 ordinary branch-push workflows.
 
+## Semaphore Buildx Cache
+
+Semaphore's cache should accelerate builds, not define the build contract. The
+pipeline restores and stores a local Buildx cache directory with a sanitized
+branch or tag key and a shared `docker-buildx-latest` fallback key, while
+`scripts/ci/docker_build.sh` keeps Docker registry cache sources as the
+provider-neutral baseline.
+
+The local cache path is enabled through `DOCKER_BUILDX_CACHE_DIR`. When that
+variable is unset, the script uses plain `docker build`; when it is set, the
+script uses `docker buildx build --load` with local cache import/export so the
+publish step still pushes the same local image tag.
+
 ## Post-Publish Security Scan
 
 Final image scanning belongs in a separate post-publish step while the project
