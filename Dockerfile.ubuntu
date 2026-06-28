@@ -55,6 +55,12 @@ COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/b
 WORKDIR /tmp
 
 RUN set -eux; \
+    printf '%s\n' \
+        'deb http://archive.debian.org/debian buster main' \
+        'deb http://archive.debian.org/debian-security buster/updates main' \
+        > /etc/apt/sources.list; \
+    printf '%s\n' 'Acquire::Check-Valid-Until "false";' \
+        > /etc/apt/apt.conf.d/99archive-valid-until; \
     apt-get update; \
     apt-get install -y --no-install-recommends --no-install-suggests \
         ca-certificates \
