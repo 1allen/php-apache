@@ -1,5 +1,5 @@
 version: v1.0
-name: php-apache image pipeline
+name: php-apache build pipeline
 agent:
   machine:
     type: e1-standard-2
@@ -11,7 +11,7 @@ global_job_config:
 blocks:
   - name: build image
     run:
-      when: "pull_request =~ '^.+$' OR branch = 'latest'"
+      when: "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
     task:
       env_vars:
         - name: CI_DOCKER_MODE
@@ -19,17 +19,9 @@ blocks:
       jobs:
         - name: docker build
           commands:
-            - &run_docker_ci CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
-  - name: publish image
-    run:
-      when: "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
-    task:
-      env_vars:
-        - name: CI_DOCKER_MODE
-          value: build-publish
-      jobs:
-        - name: docker publish
-          commands:
-            - *run_docker_ci
-      secrets:
-        - name: dockerhub-1allen
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+promotions:
+  - name: publish final image
+    pipeline_file: publish.yml
+    auto_promote:
+      when: "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"

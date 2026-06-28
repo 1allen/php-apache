@@ -7,9 +7,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_PATH="$ROOT_DIR/scripts/repo_sync.sh"
 TAGS_SCRIPT_PATH="$ROOT_DIR/scripts/tags_update.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
+CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
+SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
 
 assert_contains() {
     local haystack="$1"
@@ -29,6 +31,16 @@ assert_file_contains() {
         echo "Expected $file_path to contain: $pattern" >&2
         exit 1
     }
+}
+
+assert_file_not_contains() {
+    local file_path="$1"
+    local pattern="$2"
+
+    if grep -Fq -- "$pattern" "$file_path"; then
+        echo "Expected $file_path not to contain: $pattern" >&2
+        exit 1
+    fi
 }
 
 [[ -f "$MANIFEST_PATH" ]] || {
@@ -54,14 +66,21 @@ source "$MANIFEST_PATH"
     exit 1
 }
 
+[[ -x "$CI_TRIVY_SCAN_SCRIPT_PATH" ]] || {
+    echo "Missing executable CI Trivy scan script: $CI_TRIVY_SCAN_SCRIPT_PATH" >&2
+    exit 1
+}
+
 status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
+assert_contains "$status_output" ".semaphore/publish.yml"
 assert_contains "$status_output" ".dockerignore"
 assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
+assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -116,39 +135,62 @@ assert_file_contains "$SEMAPHORE_PATH" 'global_job_config:'
 assert_file_contains "$SEMAPHORE_PATH" 'prologue:'
 assert_file_contains "$SEMAPHORE_PATH" 'checkout'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" "pull_request =~ '^.+$' OR branch = 'latest'"
-assert_file_contains "$SEMAPHORE_PATH" 'name: publish image'
-assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN')"
+assert_file_contains "$SEMAPHORE_PATH" "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN'"
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PATH" 'value: build'
-assert_file_contains "$SEMAPHORE_PATH" 'value: build-publish'
-assert_file_contains "$SEMAPHORE_PATH" 'dockerhub-1allen'
+assert_file_contains "$SEMAPHORE_PATH" 'promotions:'
+assert_file_contains "$SEMAPHORE_PATH" 'name: publish final image'
+assert_file_contains "$SEMAPHORE_PATH" 'pipeline_file: publish.yml'
+assert_file_contains "$SEMAPHORE_PATH" "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN')"
+assert_file_not_contains "$SEMAPHORE_PATH" '*run_docker_ci'
+assert_file_not_contains "$SEMAPHORE_PATH" '&run_docker_ci'
 
-ruby - "$SEMAPHORE_PATH" <<'RUBY'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: php-apache publish pipeline'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: publish image'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: scan published image'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dependencies:'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" '- publish image'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/docker_build.sh'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/trivy_scan.sh'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: CI_DOCKER_MODE'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'value: build-publish'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dockerhub-1allen'
+assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '*run_docker_ci'
+assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '&run_docker_ci'
+
+ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" <<'RUBY'
 require "yaml"
 
-config = YAML.load_file(ARGV.fetch(0))
-blocks = config.fetch("blocks")
-smoke = blocks.find { |block| block["name"] == "build image" } or abort "Missing build image block"
-publish = blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
+build_config = YAML.load_file(ARGV.fetch(0))
+publish_config = YAML.load_file(ARGV.fetch(1))
+build_blocks = build_config.fetch("blocks")
+publish_blocks = publish_config.fetch("blocks")
+smoke = build_blocks.find { |block| block["name"] == "build image" } or abort "Missing build image block"
+publish = publish_blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
+scan = publish_blocks.find { |block| block["name"] == "scan published image" } or abort "Missing scan published image block"
 
-abort "Global prologue must run checkout" unless config.fetch("global_job_config").fetch("prologue").fetch("commands") == ["checkout"]
+abort "Root pipeline must have one visible block" unless build_blocks.size == 1
+abort "Global prologue must run checkout" unless build_config.fetch("global_job_config").fetch("prologue").fetch("commands") == ["checkout"]
 abort "Build image block should not define empty dependencies" if smoke.key?("dependencies")
-abort "Build image block must run only for PRs and latest" unless smoke.fetch("run").fetch("when") == "pull_request =~ '^.+$' OR branch = 'latest'"
+abort "Build image block must run for PRs, latest, and publishable refs" unless smoke.fetch("run").fetch("when") == "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
 abort "Build image block must not receive secrets" if smoke.fetch("task", {}).key?("secrets")
 abort "Build image block must set build mode" unless smoke.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build" }
-abort "Publish image block should not define empty dependencies" if publish.key?("dependencies")
-unless publish.fetch("run").fetch("when").include?("pull_request !~ '^.+$'")
-    abort "Publish image block must exclude pull requests"
+promotion = build_config.fetch("promotions").find { |item| item["name"] == "publish final image" } or abort "Missing publish final image promotion"
+abort "Publish promotion must target publish.yml" unless promotion["pipeline_file"] == "publish.yml"
+unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
+    abort "Publish promotion must only run after passed publishable refs"
 end
+abort "Publish image block should not define empty dependencies" if publish.key?("dependencies")
 abort "Publish image block must set publish mode" unless publish.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build-publish" }
 unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
     abort "Publish image block must receive dockerhub-1allen secret"
 end
+abort "Scan block must depend on publish image" unless scan.fetch("dependencies") == ["publish image"]
+abort "Scan block must not receive secrets" if scan.fetch("task", {}).key?("secrets")
 RUBY
 
 if grep -Eq "name: (BUILDER_IMAGE|DOCKER_USERNAME|IMAGE_NAME|DOCKER_BUILDKIT)" "$SEMAPHORE_PATH"; then
@@ -169,7 +211,6 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'export DOCKER_BUILDKIT="${D
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'DOCKER_USERNAME="${DOCKER_USERNAME:-$DEFAULT_DOCKER_USERNAME}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDER_IMAGE="${BUILDER_IMAGE:-$DEFAULT_BUILDER_IMAGE}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:latest}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/config/php-branches.conf"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"'
@@ -183,10 +224,14 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish from pu
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish non-version tag'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish ref: skipping Docker build'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'scan_published_image "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker run --rm "$TRIVY_IMAGE" image --exit-code 0 --severity HIGH,CRITICAL "$image_ref"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Warning: non-blocking Trivy scan failed for $image_ref'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
+assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'trivy'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:latest}"'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'docker run --rm "$TRIVY_IMAGE" image --exit-code 0 --severity HIGH,CRITICAL "$image_ref"'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Warning: non-blocking Trivy scan failed for $image_ref'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan pull-request ref.'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan non-version tag'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan non-publish branch'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches+=("$1")'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
@@ -266,12 +311,18 @@ PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DO
 assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:php85 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:php85 ."
 assert_file_contains "$CI_DOCKER_LOG" "docker login -u $DEFAULT_DOCKER_USERNAME --password-stdin"
 assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:php85"
+if grep -Fq -- 'docker run --rm aquasec/trivy' "$CI_DOCKER_LOG"; then
+    echo "Expected publish script not to run Trivy directly." >&2
+    exit 1
+fi
+
+: > "$CI_DOCKER_LOG"
+PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 bash "$CI_TRIVY_SCAN_SCRIPT_PATH"
 assert_file_contains "$CI_DOCKER_LOG" "docker run --rm aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:php85"
 
 : > "$CI_DOCKER_LOG"
-failed_scan_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test TRIVY_IMAGE=failing-trivy bash "$CI_DOCKER_BUILD_SCRIPT_PATH" 2>&1)"
+failed_scan_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 TRIVY_IMAGE=failing-trivy bash "$CI_TRIVY_SCAN_SCRIPT_PATH" 2>&1)"
 assert_contains "$failed_scan_output" "Warning: non-blocking Trivy scan failed for $default_image_ref:php85"
-assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:php85"
 assert_file_contains "$CI_DOCKER_LOG" "docker run --rm failing-trivy image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:php85"
 
 : > "$CI_DOCKER_LOG"

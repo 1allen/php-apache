@@ -18,14 +18,14 @@ eventually.
 
 ## Post-Publish Security Scan
 
-Final image scanning belongs after `docker push` while the project is still
-using advisory vulnerability scans. The scan should target the exact pushed
-Docker Hub ref for each `phpXX` branch or version-like tag and should not block
-publishing until the project deliberately promotes it to a gate.
+Final image scanning belongs in a separate post-publish step while the project
+is still using advisory vulnerability scans. The scan should target the exact
+pushed Docker Hub ref for each `phpXX` branch or version-like tag and should not
+block publishing until the project deliberately promotes it to a gate.
 
-Keep this in `scripts/ci/docker_build.sh` so the behavior follows the image
-publish path across CI providers. Semaphore YAML may install or provide scanner
-tooling, but it should not own the scan policy.
+Keep the scan policy in `scripts/ci/trivy_scan.sh` so the behavior follows the
+image publish path across CI providers. Semaphore may expose it as a separate
+post-publish block, but the provider adapter should not own the scan policy.
 
 ## Stage ImageMagick With DESTDIR
 

@@ -11,7 +11,6 @@ BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
 DOCKER_USERNAME="${DOCKER_USERNAME:-$DEFAULT_DOCKER_USERNAME}"
 IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
 BUILDER_IMAGE="${BUILDER_IMAGE:-$DEFAULT_BUILDER_IMAGE}"
-TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:latest}"
 CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"
 CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"
 CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"
@@ -47,15 +46,6 @@ docker_pull_cache_source() {
     local image_ref="$1"
 
     docker pull "$image_ref" || true
-}
-
-scan_published_image() {
-    local image_ref="$1"
-
-    echo "Running non-blocking Trivy scan for $image_ref"
-    if ! docker run --rm "$TRIVY_IMAGE" image --exit-code 0 --severity HIGH,CRITICAL "$image_ref"; then
-        echo "Warning: non-blocking Trivy scan failed for $image_ref" >&2
-    fi
 }
 
 case "$CI_DOCKER_MODE" in
@@ -117,7 +107,6 @@ if [[ "$publish_image" -eq 1 && "$CI_DOCKER_MODE" == "build-publish" ]]; then
     echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
     docker tag "$IMAGE_NAME:$publish_tag" "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
     docker push "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
-    scan_published_image "$DOCKER_USERNAME/$IMAGE_NAME:$publish_tag"
 elif [[ "$publish_image" -eq 1 ]]; then
     echo "Publishable ref built without publishing: $IMAGE_NAME:$publish_tag"
 else
