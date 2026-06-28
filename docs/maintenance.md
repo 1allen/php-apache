@@ -18,7 +18,7 @@ Related project decisions are recorded in `docs/decisions.md`.
 
 ## Current Image Decisions
 
-As of 2026-06-24:
+As of 2026-06-28:
 
 - `webdevops/php-apache:8.5` is the current Ubuntu base used by
   `Dockerfile.ubuntu`.
@@ -318,6 +318,17 @@ bash scripts/repo_sync.sh verify-image-tooling latest
 
 Open a PR against `latest` first for shared-file review. Semaphore builds the
 PR and the eventual `latest` merge without publishing images. After review,
-push the supported `phpXX` branches that carry Dockerfile commits so Semaphore
-publishes branch-specific image tags. Leave `php73` and `php74` untouched unless
-the change is a critical emergency fix.
+merge the PR into `latest`, update the local `latest` branch, and run
+`bash scripts/repo_sync.sh sync-shared --apply` so the shared-file commits are
+created from the merged source branch. Then push only the supported `phpXX`
+branches that carry the branch-local Dockerfile commits plus the shared-file
+sync commits; Semaphore publishes those branch-specific image tags. Leave
+`php73` and `php74` untouched unless the change is a critical emergency fix.
+
+For the final pre-push gate after branch-local Dockerfile commits and shared
+sync commits exist, run:
+
+```bash
+bash tests/repo_sync_test.sh
+bash scripts/repo_sync.sh verify-image-tooling
+```
