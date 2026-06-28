@@ -87,10 +87,6 @@ branch_exists_local() {
     git -C "$ROOT_DIR" show-ref --verify --quiet "refs/heads/$1"
 }
 
-branch_exists_remote() {
-    git -C "$ROOT_DIR" show-ref --verify --quiet "refs/remotes/origin/$1"
-}
-
 current_branch() {
     git -C "$ROOT_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true
 }
@@ -133,22 +129,16 @@ print_section() {
     done
 }
 
-print_named_section() {
+print_array_section() {
     local title="$1"
-    local array_name="$2"
-    local array_length=0
-    local items=()
+    shift
+    local -a items=("$@")
 
-    # shellcheck disable=SC1087
-    eval "array_length=\${#${array_name}[@]}"
-
-    if [[ "$array_length" -eq 0 ]]; then
+    if [[ "${#items[@]}" -eq 0 ]]; then
         print_section "$title"
         return
     fi
 
-    # shellcheck disable=SC1087
-    eval "items=(\"\${${array_name}[@]}\")"
     print_section "$title" "${items[@]}"
 }
 
@@ -218,11 +208,11 @@ status_command() {
         [[ -n "$branch" ]] && upstream_branches+=("$branch")
     done < <(load_upstream_branches || true)
 
-    print_named_section "Configured PHP branches:" configured
-    print_named_section "Local PHP branches:" local_branches
-    print_named_section "Remote PHP branches:" remote_branches
-    print_named_section "Configured branches missing locally:" missing_local
-    print_named_section "Shared files:" SHARED_FILES
+    print_array_section "Configured PHP branches:" "${configured[@]+"${configured[@]}"}"
+    print_array_section "Local PHP branches:" "${local_branches[@]+"${local_branches[@]}"}"
+    print_array_section "Remote PHP branches:" "${remote_branches[@]+"${remote_branches[@]}"}"
+    print_array_section "Configured branches missing locally:" "${missing_local[@]+"${missing_local[@]}"}"
+    print_array_section "Shared files:" "${SHARED_FILES[@]}"
 
     if [[ ${#upstream_branches[@]} -gt 0 ]]; then
         local upstream_missing=()
@@ -231,8 +221,8 @@ status_command() {
             branch_in_list "$branch" "${configured[@]}" || upstream_missing+=("$branch")
         done
 
-        print_named_section "Upstream PHP branches from Docker Hub:" upstream_branches
-        print_named_section "Configured branches missing from manifest:" upstream_missing
+        print_array_section "Upstream PHP branches from Docker Hub:" "${upstream_branches[@]+"${upstream_branches[@]}"}"
+        print_array_section "Configured branches missing from manifest:" "${upstream_missing[@]+"${upstream_missing[@]}"}"
     else
         echo "Upstream PHP branches from Docker Hub:"
         echo "  - unavailable (network or curl not available)"

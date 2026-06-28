@@ -11,8 +11,8 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
 
 - Make shared maintenance edits on `latest` first.
 - Treat `config/php-branches.conf` as the source of truth for supported PHP
-  branches, shared files, CI constants, publish tag patterns, and accepted
-  installer image refs.
+  branches, shared files, provider-neutral Docker image defaults, publish tag
+  patterns, and accepted installer image refs.
 - Keep `AGENTS.md`, `README.md`, `docs/README.md`, `docs/maintenance.md`,
   `docs/decisions.md`, scripts, config, and CI changes in `SHARED_FILES` when
   they should propagate to PHP version branches.

@@ -48,8 +48,10 @@ As of 2026-06-24:
 - Publish-capable git tags must match the version-like tag pattern in
   `config/php-branches.conf`.
 - Semaphore uses `e1-standard-2` to keep build-only PR checks on the smallest
-  Ubuntu x64 2-vCPU machine. If ImageMagick builds fail from memory or disk
-  pressure, use `f1-standard-2` as the next fallback and document the failure.
+  Ubuntu x64 2-vCPU machine. This is a Semaphore adapter setting in
+  `.semaphore/semaphore.yml`, not a provider-neutral manifest value. If
+  ImageMagick builds fail from memory or disk pressure, use `f1-standard-2` as
+  the next fallback and document the failure.
 - `.dockerignore` intentionally keeps repo docs, tests, scripts, local agent
   state, and Git metadata out of the Docker build context because the image does
   not copy files from the repository.
