@@ -184,7 +184,7 @@ abort "Publish promotion must target publish.yml" unless promotion["pipeline_fil
 unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
     abort "Publish promotion must only run after passed publishable refs"
 end
-abort "Publish image block should not define empty dependencies" if publish.key?("dependencies")
+abort "Publish image block must explicitly define no dependencies" unless publish.fetch("dependencies") == []
 abort "Publish image block must set publish mode" unless publish.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build-publish" }
 unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
     abort "Publish image block must receive dockerhub-1allen secret"
