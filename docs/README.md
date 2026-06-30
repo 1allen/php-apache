@@ -9,8 +9,11 @@ files.
 - `config/php-branches.conf`: supported PHP branches, legacy branches, shared
   files, provider-neutral Docker image defaults, publish tag pattern, and
   accepted PHP extension installer image refs.
-- `scripts/ci/docker_build.sh`: CI-provider-neutral Docker build and publish
-  behavior. Semaphore is only the current adapter.
+- `scripts/ci/docker_build.sh`: CI-provider-neutral Docker image lifecycle
+  operations. Build, artifact save/load, publish, and scan stages must stay
+  separate.
+- `scripts/ci/semaphore_build.sh`: Semaphore-specific cache and artifact
+  adapter around the provider-neutral Docker lifecycle.
 - `Dockerfile.ubuntu`: maintained `latest` image build path.
 - `docs/maintenance.md`: human maintenance runbook for updates, branch
   propagation, image verification, and release flow.
@@ -35,6 +38,22 @@ and `php74`. Maintenance that touches these branches must name them explicitly.
 
 **Build-only CI**: a CI run that builds the Dockerfile as a smoke test without
 tagging or publishing an image.
+
+**Strict stage separation**: a CI design rule that build, publish, scan, and
+other checks run as distinct stages. Later stages consume explicit CI artifacts
+or published refs instead of rebuilding or repeating earlier stage work.
+
+**Image line**: the PHP minor line derived from the maintained Dockerfile's
+`webdevops/php-apache:X.Y` base image, expressed as a branch-like name such as
+`php85`. Image-line identity scopes registry cache sources and CI cache keys.
+
+**CI adapter**: a CI-provider-specific wrapper that maps provider variables,
+cache commands, and artifact commands to the provider-neutral lifecycle scripts.
+Semaphore is the current CI adapter, but it should not own Docker lifecycle
+policy.
+
+**Workflow artifact**: a CI artifact scoped to one workflow run and used to pass
+the exact built Docker image from the build block to the promoted publish block.
 
 **Bundled imagick**: the PECL `imagick` extension included in the published
 image and linked against the custom ImageMagick installation under `/usr/local`.

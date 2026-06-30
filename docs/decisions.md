@@ -21,6 +21,46 @@ Use YAML to describe the build and publish flow, but use Semaphore's "What to
 build" settings to avoid duplicate PR statuses from both pull-request and
 ordinary branch-push workflows.
 
+## Image-Line Cache Identity
+
+Cache identity follows the Dockerfile base PHP minor line, not the repository
+branch name and not Docker Hub `latest`. The `latest` branch is an integration
+branch and this project does not publish `1allen/php-apache:latest`, so using
+that tag as a cache source is misleading and can silently depend on stale or
+absent registry state.
+
+The provider-neutral script derives an image line such as `php85` from
+`Dockerfile.ubuntu` by reading the `webdevops/php-apache:8.5` base image. Docker
+registry cache sources and CI cache keys use that image line. This keeps cache
+reuse per PHP version, including when the `latest` branch currently builds the
+same PHP minor as a supported branch.
+
+## Strict CI Stage Separation
+
+Build, publish, scan, and future checks must stay as separate CI stages. A
+publish stage must not rebuild the Docker image, and a scan stage must not
+publish. Stage boundaries should be connected with explicit CI features:
+workflow artifacts for exact build outputs, provider caches for acceleration,
+and published refs for checks that intentionally inspect the pushed image.
+
+This keeps failures easier to interpret and prevents publish or scan stages from
+silently doing a different build than the one that passed the build stage.
+
+## CI Adapters And Artifacts
+
+CI-specific YAML should stay declarative and thin. Provider-neutral Docker
+image lifecycle operations belong in `scripts/ci/docker_build.sh`; provider
+storage commands belong in small adapter scripts such as
+`scripts/ci/semaphore_build.sh`.
+
+Semaphore cache accelerates Buildx by restoring and storing a local cache
+directory scoped by image line. It is not an artifact handoff and it is not
+authoritative. For publishable refs, the root pipeline builds the Docker image
+once and pushes a workflow artifact containing `docker save` output. The
+promoted publish pipeline pulls that workflow artifact, loads it, and pushes
+the exact built image. PR and `latest` build-only refs do not upload image
+artifacts because no downstream publish block consumes them.
+
 ## Post-Publish Security Scan
 
 Final image scanning belongs in a separate post-publish step while the project

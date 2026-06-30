@@ -13,13 +13,10 @@ blocks:
     run:
       when: "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
     task:
-      env_vars:
-        - name: CI_DOCKER_MODE
-          value: build
       jobs:
         - name: docker build
           commands:
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+            - bash scripts/ci/semaphore_build.sh build
 promotions:
   - name: publish final image
     pipeline_file: publish.yml
