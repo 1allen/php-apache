@@ -43,6 +43,9 @@ As of 2026-06-30:
   stores that exact image as a workflow artifact, and the promoted publish
   pipeline pulls and loads the artifact before pushing. The publish block does
   not rebuild.
+- CI stages are strictly separated. Build, publish, scan, and future checks
+  should use Semaphore workflow artifacts, caches, and published refs to avoid
+  duplicate work without collapsing responsibilities into one command.
 - Semaphore project triggers still control whether GitHub receives both
   `ci/semaphoreci/pr` and `ci/semaphoreci/push` statuses for a PR branch
   commit. YAML `run.when` can skip blocks, but it cannot prevent Semaphore from
@@ -64,10 +67,10 @@ As of 2026-06-30:
 - CI declaration files call provider adapter scripts instead of embedding shell
   logic. Semaphore YAML calls `scripts/ci/semaphore_build.sh`; that adapter owns
   Semaphore `cache` and `artifact` commands. Provider-neutral Docker lifecycle
-  policy stays in `scripts/ci/docker_build.sh`. New CI providers should map
-  their native branch/tag/ref variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
-  `CI_GIT_REF_TYPE` before calling the provider-neutral script or writing a
-  small provider adapter.
+  operations stay in `scripts/ci/docker_build.sh`, and no operation should mix
+  build with publish. New CI providers should map their native branch/tag/ref
+  variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and `CI_GIT_REF_TYPE` before
+  calling the provider-neutral script or writing a small provider adapter.
 - Publish-capable git tags must match the version-like tag pattern in
   `config/php-branches.conf`.
 - Semaphore uses `e1-standard-2` to keep build-only PR checks on the smallest
@@ -181,6 +184,9 @@ CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh save-artifact .ci-artifacts/
 CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh load-artifact .ci-artifacts/php-apache-php85.tar
 CI_GIT_BRANCH=php85 DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh publish
 ```
+
+Do not add a combined build-and-publish mode. Publishing assumes a local image
+has already been loaded from an explicit build artifact.
 
 To exercise the Semaphore adapter locally with fake provider variables:
 

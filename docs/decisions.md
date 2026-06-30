@@ -35,10 +35,21 @@ registry cache sources and CI cache keys use that image line. This keeps cache
 reuse per PHP version, including when the `latest` branch currently builds the
 same PHP minor as a supported branch.
 
+## Strict CI Stage Separation
+
+Build, publish, scan, and future checks must stay as separate CI stages. A
+publish stage must not rebuild the Docker image, and a scan stage must not
+publish. Stage boundaries should be connected with explicit CI features:
+workflow artifacts for exact build outputs, provider caches for acceleration,
+and published refs for checks that intentionally inspect the pushed image.
+
+This keeps failures easier to interpret and prevents publish or scan stages from
+silently doing a different build than the one that passed the build stage.
+
 ## CI Adapters And Artifacts
 
 CI-specific YAML should stay declarative and thin. Provider-neutral Docker
-image lifecycle behavior belongs in `scripts/ci/docker_build.sh`; provider
+image lifecycle operations belong in `scripts/ci/docker_build.sh`; provider
 storage commands belong in small adapter scripts such as
 `scripts/ci/semaphore_build.sh`.
 

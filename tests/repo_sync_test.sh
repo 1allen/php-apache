@@ -236,13 +236,13 @@ assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_TAG="${CI_GIT_TAG:-$
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "branch"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "tag"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[@]}" "$BUILD_CONTEXT"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish from pull-request ref.'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish non-version tag'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish ref: skipping Docker build'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
+assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
+assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'compat_build_publish'
 assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'trivy'
 assert_file_contains "$CI_SEMAPHORE_BUILD_SCRIPT_PATH" 'cache restore "$cache_key" || true'
 assert_file_contains "$CI_SEMAPHORE_BUILD_SCRIPT_PATH" 'cache delete "$cache_key" || true'
@@ -279,6 +279,7 @@ TMP_DOCKER_BIN="$(mktemp -d "${TMPDIR:-/tmp}/ci-docker-bin.XXXXXX")"
 CI_DOCKER_LOG="$TMP_DOCKER_BIN/docker.log"
 PR_PUBLISH_OUTPUT="$TMP_DOCKER_BIN/pr-publish.out"
 TAG_PUBLISH_OUTPUT="$TMP_DOCKER_BIN/tag-publish.out"
+MIXED_MODE_OUTPUT="$TMP_DOCKER_BIN/mixed-mode.out"
 export CI_DOCKER_LOG
 
 default_image_ref="$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME"
@@ -358,12 +359,11 @@ if grep -Fq -- 'docker login' "$CI_DOCKER_LOG" || grep -Fq -- 'docker push' "$CI
 fi
 
 : > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
-assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:php85 --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:php85 ."
+PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" publish
 assert_file_contains "$CI_DOCKER_LOG" "docker login -u $DEFAULT_DOCKER_USERNAME --password-stdin"
 assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:php85"
-if grep -Fq -- 'docker run --rm aquasec/trivy' "$CI_DOCKER_LOG"; then
-    echo "Expected publish script not to run Trivy directly." >&2
+if grep -Fq -- 'docker build ' "$CI_DOCKER_LOG" || grep -Fq -- 'docker buildx build' "$CI_DOCKER_LOG"; then
+    echo "Expected publish action not to build." >&2
     exit 1
 fi
 
@@ -377,18 +377,24 @@ assert_contains "$failed_scan_output" "Warning: non-blocking Trivy scan failed f
 assert_file_contains "$CI_DOCKER_LOG" "docker run --rm failing-trivy image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:php85"
 
 : > "$CI_DOCKER_LOG"
-if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >"$PR_PUBLISH_OUTPUT" 2>&1; then
-    echo "Expected pull-request build-publish mode to fail." >&2
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" publish >"$PR_PUBLISH_OUTPUT" 2>&1; then
+    echo "Expected pull-request publish action to fail." >&2
     exit 1
 fi
 assert_file_contains "$PR_PUBLISH_OUTPUT" 'Refusing to publish from pull-request ref.'
 
 : > "$CI_DOCKER_LOG"
-if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=latest CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >"$TAG_PUBLISH_OUTPUT" 2>&1; then
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=latest CI_GIT_REF_TYPE=tag DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" publish >"$TAG_PUBLISH_OUTPUT" 2>&1; then
     echo "Expected non-version tag publish to fail." >&2
     exit 1
 fi
 assert_file_contains "$TAG_PUBLISH_OUTPUT" 'Refusing to publish non-version tag: latest.'
+
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" build-publish >"$MIXED_MODE_OUTPUT" 2>&1; then
+    echo "Expected mixed build-publish action to fail." >&2
+    exit 1
+fi
+assert_file_contains "$MIXED_MODE_OUTPUT" 'Unknown Docker build action: build-publish'
 
 : > "$CI_DOCKER_LOG"
 PATH="$TMP_DOCKER_BIN:$PATH" SEMAPHORE_GIT_BRANCH=php85 SEMAPHORE_GIT_REF_TYPE=branch bash "$CI_SEMAPHORE_BUILD_SCRIPT_PATH" build

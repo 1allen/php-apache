@@ -14,7 +14,6 @@ BUILDER_IMAGE="${BUILDER_IMAGE:-$DEFAULT_BUILDER_IMAGE}"
 CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"
 CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"
 CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"
-CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"
 DOCKER_BUILDX_BUILDER="${DOCKER_BUILDX_BUILDER:-php-apache-ci}"
 DOCKER_BUILDX_CACHE_DIR="${DOCKER_BUILDX_CACHE_DIR:-}"
 DOCKER_BUILDX_CACHE_NEXT_DIR="${DOCKER_BUILDX_CACHE_NEXT_DIR:-}"
@@ -71,7 +70,7 @@ resolve_publish_ref() {
         if [[ "$CI_GIT_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
             publish_tag="$CI_GIT_TAG"
             publish_image=1
-        elif [[ "$CI_DOCKER_MODE" == "build-publish" || "${1:-}" == "publish" ]]; then
+        elif [[ "${1:-}" == "publish" ]]; then
             die "Refusing to publish non-version tag: $CI_GIT_TAG."
         fi
     elif [[ "$CI_GIT_REF_TYPE" != "pull-request" && "$CI_GIT_BRANCH" =~ ^php[0-9][0-9]$ ]]; then
@@ -217,8 +216,8 @@ load_artifact_command() {
 }
 
 publish_command() {
-    [[ "$publish_image" -eq 1 ]] || die "Refusing to publish non-publish ref."
     [[ "$CI_GIT_REF_TYPE" != "pull-request" ]] || die "Refusing to publish from pull-request ref."
+    [[ "$publish_image" -eq 1 ]] || die "Refusing to publish non-publish ref."
     [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $(published_image_ref)."
 
     echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
@@ -226,26 +225,7 @@ publish_command() {
     docker push "$(published_image_ref)"
 }
 
-compat_build_publish_command() {
-    [[ "$CI_GIT_REF_TYPE" != "pull-request" ]] || die "Refusing to publish from pull-request ref."
-    build_command
-    publish_command
-}
-
-action="${1:-}"
-if [[ -z "$action" ]]; then
-    case "$CI_DOCKER_MODE" in
-        build)
-            action="build"
-            ;;
-        build-publish)
-            action="build-publish"
-            ;;
-        *)
-            die "Unknown CI_DOCKER_MODE: $CI_DOCKER_MODE"
-            ;;
-    esac
-fi
+action="${1:-build}"
 
 image_line="$(derive_image_line)"
 resolve_publish_ref "$action"
@@ -265,9 +245,6 @@ case "$action" in
         ;;
     publish)
         publish_command
-        ;;
-    build-publish)
-        compat_build_publish_command
         ;;
     *)
         die "Unknown Docker build action: $action"
