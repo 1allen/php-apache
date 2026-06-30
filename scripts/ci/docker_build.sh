@@ -15,6 +15,9 @@ CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"
 CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"
 CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"
 CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"
+DOCKER_BUILDX_BUILDER="${DOCKER_BUILDX_BUILDER:-php-apache-ci}"
+DOCKER_BUILDX_CACHE_DIR="${DOCKER_BUILDX_CACHE_DIR:-}"
+DOCKER_BUILDX_CACHE_NEXT_DIR="${DOCKER_BUILDX_CACHE_NEXT_DIR:-}"
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 
 if [[ -z "$CI_GIT_BRANCH" && "${GITHUB_REF_TYPE:-}" == "branch" ]]; then
@@ -46,6 +49,25 @@ docker_pull_cache_source() {
     local image_ref="$1"
 
     docker pull "$image_ref" || true
+}
+
+ensure_safe_cache_dir() {
+    local cache_dir="$1"
+
+    case "$cache_dir" in
+        ""|"/"|".")
+            die "Refusing unsafe DOCKER_BUILDX_CACHE_DIR: ${cache_dir:-<empty>}"
+            ;;
+    esac
+}
+
+ensure_buildx_builder() {
+    if ! docker buildx inspect "$DOCKER_BUILDX_BUILDER" >/dev/null 2>&1; then
+        docker buildx create --name "$DOCKER_BUILDX_BUILDER" --use >/dev/null
+    fi
+
+    docker buildx use "$DOCKER_BUILDX_BUILDER" >/dev/null
+    docker buildx inspect --bootstrap >/dev/null
 }
 
 case "$CI_DOCKER_MODE" in
@@ -100,7 +122,29 @@ if [[ "$publish_image" -eq 1 ]]; then
     build_args+=(-t "$IMAGE_NAME:$publish_tag")
 fi
 
-docker build "${build_args[@]}" "$BUILD_CONTEXT"
+if [[ -n "$DOCKER_BUILDX_CACHE_DIR" ]]; then
+    ensure_safe_cache_dir "$DOCKER_BUILDX_CACHE_DIR"
+    DOCKER_BUILDX_CACHE_NEXT_DIR="${DOCKER_BUILDX_CACHE_NEXT_DIR:-${DOCKER_BUILDX_CACHE_DIR}-next}"
+    ensure_safe_cache_dir "$DOCKER_BUILDX_CACHE_NEXT_DIR"
+    ensure_buildx_builder
+
+    mkdir -p "$(dirname "$DOCKER_BUILDX_CACHE_DIR")"
+    rm -rf "$DOCKER_BUILDX_CACHE_NEXT_DIR"
+
+    if [[ -d "$DOCKER_BUILDX_CACHE_DIR" ]]; then
+        build_args+=(--cache-from "type=local,src=$DOCKER_BUILDX_CACHE_DIR")
+    fi
+
+    build_args+=(--cache-to "type=local,dest=$DOCKER_BUILDX_CACHE_NEXT_DIR,mode=max")
+    docker buildx build --load "${build_args[@]}" "$BUILD_CONTEXT"
+
+    if [[ -d "$DOCKER_BUILDX_CACHE_NEXT_DIR" ]]; then
+        rm -rf "$DOCKER_BUILDX_CACHE_DIR"
+        mv "$DOCKER_BUILDX_CACHE_NEXT_DIR" "$DOCKER_BUILDX_CACHE_DIR"
+    fi
+else
+    docker build "${build_args[@]}" "$BUILD_CONTEXT"
+fi
 
 if [[ "$publish_image" -eq 1 && "$CI_DOCKER_MODE" == "build-publish" ]]; then
     [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $DOCKER_USERNAME/$IMAGE_NAME:$publish_tag."

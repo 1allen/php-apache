@@ -30,7 +30,9 @@ As of 2026-06-28:
   the installer image configured in `config/php-branches.conf` into
   `/usr/local/bin`.
 - CI enables BuildKit inline cache metadata and uses both the target image tag
-  and `latest` as cache sources. PR branches and `latest` are build-only;
+  and `latest` as portable registry cache sources. Semaphore jobs also restore
+  and store a local Buildx cache directory with branch/tag-specific keys that
+  fall back to `docker-buildx-latest`. PR branches and `latest` are build-only;
   Docker Hub publishing is reserved for `phpXX` branches and git tags.
 - Semaphore's root pipeline has one visible build block for PRs, `latest`, and
   publishable refs. Publishable `phpXX` branches and version-like git tags
@@ -51,6 +53,9 @@ As of 2026-06-28:
 - Semaphore does not pass Docker image artifacts between jobs. A saved Docker
   image is large, has awkward ref-specific naming, and adds artifact storage
   cost without a clear win for this small pipeline.
+- Semaphore cache is used only for the Buildx local cache directory. Cache
+  restore/store failures are best-effort and must not change publish decisions;
+  the registry cache remains the provider-neutral fallback.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. Semaphore is the current CI adapter,
   not the long-term interface. New CI providers should map their native
