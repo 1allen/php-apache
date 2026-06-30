@@ -18,7 +18,7 @@ Related project decisions are recorded in `docs/decisions.md`.
 
 ## Current Image Decisions
 
-As of 2026-06-28:
+As of 2026-06-30:
 
 - `webdevops/php-apache:8.5` is the current Ubuntu base used by
   `Dockerfile.ubuntu`.
@@ -29,16 +29,20 @@ As of 2026-06-28:
 - `install-php-extensions` is copied from
   the installer image configured in `config/php-branches.conf` into
   `/usr/local/bin`.
-- CI enables BuildKit inline cache metadata and uses both the target image tag
-  and `latest` as portable registry cache sources. Semaphore jobs also restore
-  and store a local Buildx cache directory with branch/tag-specific keys that
-  fall back to `docker-buildx-latest`. PR branches and `latest` are build-only;
-  Docker Hub publishing is reserved for `phpXX` branches and git tags.
+- CI enables BuildKit inline cache metadata and uses the Dockerfile-derived
+  image line, such as `php85`, as the portable registry cache source. It does
+  not use Docker Hub `latest` as a cache source because this project does not
+  publish that tag. PR branches and `latest` are build-only; Docker Hub
+  publishing is reserved for `phpXX` branches and git tags.
 - Semaphore's root pipeline has one visible build block for PRs, `latest`, and
   publishable refs. Publishable `phpXX` branches and version-like git tags
   auto-promote to `.semaphore/publish.yml`, which has explicit `publish image`
   and `scan published image` blocks. This keeps PR workflows to one visible
   build block while preserving a structured publish flow for release refs.
+- Publishable refs build the Docker image once in the root pipeline. Semaphore
+  stores that exact image as a workflow artifact, and the promoted publish
+  pipeline pulls and loads the artifact before pushing. The publish block does
+  not rebuild.
 - Semaphore project triggers still control whether GitHub receives both
   `ci/semaphoreci/pr` and `ci/semaphoreci/push` statuses for a PR branch
   commit. YAML `run.when` can skip blocks, but it cannot prevent Semaphore from
@@ -50,17 +54,20 @@ As of 2026-06-28:
   advisory and non-blocking for now; failed scans should be reviewed but should
   not fail publishing until the project intentionally promotes the scan to a
   pre-publish or publish gate.
-- Semaphore does not pass Docker image artifacts between jobs. A saved Docker
-  image is large, has awkward ref-specific naming, and adds artifact storage
-  cost without a clear win for this small pipeline.
-- Semaphore cache is used only for the Buildx local cache directory. Cache
+- Semaphore workflow artifacts pass the exact saved Docker image from the root
+  build pipeline to the promoted publish pipeline for publishable refs only.
+  Build-only PR and `latest` runs do not save Docker image artifacts.
+- Semaphore cache is used only for the Buildx local cache directory and is
+  scoped by image line, for example `docker-buildx-php85`. Cache
   restore/store failures are best-effort and must not change publish decisions;
   the registry cache remains the provider-neutral fallback.
-- CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
-  the Docker build and publish shell logic. Semaphore is the current CI adapter,
-  not the long-term interface. New CI providers should map their native
-  branch/tag/ref variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
-  `CI_GIT_REF_TYPE` before calling that script.
+- CI declaration files call provider adapter scripts instead of embedding shell
+  logic. Semaphore YAML calls `scripts/ci/semaphore_build.sh`; that adapter owns
+  Semaphore `cache` and `artifact` commands. Provider-neutral Docker lifecycle
+  policy stays in `scripts/ci/docker_build.sh`. New CI providers should map
+  their native branch/tag/ref variables to `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
+  `CI_GIT_REF_TYPE` before calling the provider-neutral script or writing a
+  small provider adapter.
 - Publish-capable git tags must match the version-like tag pattern in
   `config/php-branches.conf`.
 - Semaphore uses `e1-standard-2` to keep build-only PR checks on the smallest
@@ -168,7 +175,18 @@ To exercise the same build decision logic used by CI, run the script directly:
 ```bash
 CI_GIT_BRANCH=latest bash scripts/ci/docker_build.sh
 CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh
-CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
+CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh metadata
+CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh build
+CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh save-artifact .ci-artifacts/php-apache-php85.tar
+CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh load-artifact .ci-artifacts/php-apache-php85.tar
+CI_GIT_BRANCH=php85 DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh publish
+```
+
+To exercise the Semaphore adapter locally with fake provider variables:
+
+```bash
+SEMAPHORE_GIT_BRANCH=php85 SEMAPHORE_GIT_REF_TYPE=branch bash scripts/ci/semaphore_build.sh build
+SEMAPHORE_GIT_BRANCH=php85 SEMAPHORE_GIT_REF_TYPE=branch DOCKER_PASSWORD=... bash scripts/ci/semaphore_build.sh publish
 ```
 
 The promoted publish pipeline runs `scripts/ci/trivy_scan.sh` as a separate
