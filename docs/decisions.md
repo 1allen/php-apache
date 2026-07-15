@@ -39,3 +39,19 @@ installed into a temporary staging root with `make install DESTDIR=/tmp/imgck`.
 This keeps copied artifact paths aligned with their runtime location while still
 allowing the final image to copy only the staged `/usr/local` tree from the
 builder stage.
+
+## Use One Image For Rootless Docker
+
+Rootless Docker bind-mount compatibility should be an explicit runtime mode of
+the existing image, not a separately built or published image. In a rootless
+Docker user namespace, container UID `0` maps to the unprivileged host user
+running the daemon. Configuring the inherited WebDevOps entrypoint to run
+PHP-FPM as namespace UID `0`, together with PHP-FPM's explicit allow-root
+option, therefore preserves host-user ownership for files PHP creates on bind
+mounts.
+
+The mode must remain opt-in and documented with a rootless-daemon check. The
+same configuration on a rootful daemon would run PHP-FPM as actual container
+root and create root-owned host files. A separate image tag would not remove
+that runtime distinction and would add another branch of image behavior to
+maintain.
