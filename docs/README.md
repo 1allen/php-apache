@@ -41,3 +41,10 @@ image and linked against the custom ImageMagick installation under `/usr/local`.
 
 **Shared file**: a repository maintenance file that should be propagated from
 `latest` to PHP branches because it is not branch-version-specific.
+
+**Rootless Docker daemon**: a Docker daemon running inside the invoking user's
+user namespace. Container UID `0` maps to that unprivileged host user; it does
+not mean host UID `0`.
+
+**Non-root container process**: a process with a nonzero UID inside its
+container. This is separate from whether the Docker daemon itself is rootless.
