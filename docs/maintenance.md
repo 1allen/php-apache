@@ -109,6 +109,66 @@ when it points to a missing or unloadable ionCube loader, because that inherited
 configuration causes PHP startup warnings even though ionCube is not part of
 this image's maintained feature set.
 
+## Rootless Docker Bind Mounts
+
+Use one published image for both ordinary and rootless Docker environments.
+Rootless support is a runtime configuration, not a separate Dockerfile or image
+tag.
+
+A rootless Docker daemon runs containers in the invoking user's user namespace.
+Container UID `0` maps to the unprivileged user running that daemon. A nonzero
+container UID instead maps to a subordinate host UID, so setting
+`APPLICATION_UID`, `APPLICATION_GID`, or the Dockerfile build arguments to the
+host user's numeric IDs does not align bind-mount ownership in rootless mode.
+
+First confirm that the active daemon is rootless:
+
+```bash
+docker info --format '{{range .SecurityOptions}}{{println .}}{{end}}' \
+  | grep -F rootless
+```
+
+Then configure the service explicitly:
+
+```yaml
+services:
+  php:
+    image: 1allen/php-apache:8.5
+    user: "0:0"
+    environment:
+      CONTAINER_UID: "0"
+      SERVICE_PHPFPM_OPTS: "-R"
+    volumes:
+      - .:/app
+```
+
+`CONTAINER_UID=0` makes the inherited WebDevOps entrypoint configure the
+PHP-FPM pool for namespace UID `0`. PHP-FPM normally refuses that UID, so
+`SERVICE_PHPFPM_OPTS=-R` supplies its explicit allow-root option. The top-level
+`user: "0:0"` makes the intended namespace identity visible in the Compose
+configuration. PHP and commands executed in the service then create
+bind-mounted files as the host user that owns the rootless daemon.
+
+Do not use this mode with a rootful Docker daemon. In rootful mode these values
+run PHP-FPM as real container root and create root-owned files on host bind
+mounts. Keep the override in a rootless-specific Compose file or profile rather
+than in a portable default service definition.
+
+Verify the result against a disposable file in the mounted application path:
+
+```bash
+docker compose exec php php -r \
+  'file_put_contents("/app/.rootless-write-test", "ok\n");'
+test "$(stat -c %u .rootless-write-test)" -eq "$(id -u)"
+rm .rootless-write-test
+```
+
+If policy also requires PHP-FPM to have a nonzero UID inside the container,
+stock rootless Docker cannot guarantee that newly created bind-mounted files
+are owned by the daemon's host user. Use a runtime with keep-ID or idmapped
+mount support, or manage host filesystem ACLs; that ownership mapping cannot be
+fixed by publishing another variant of this image.
+
 ## Updating Upstreams
 
 Check these sources before changing pins:

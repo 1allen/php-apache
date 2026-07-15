@@ -10,6 +10,10 @@ CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
+README_PATH="$ROOT_DIR/README.md"
+DOCS_README_PATH="$ROOT_DIR/docs/README.md"
+MAINTENANCE_PATH="$ROOT_DIR/docs/maintenance.md"
+DECISIONS_PATH="$ROOT_DIR/docs/decisions.md"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
 SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
 
@@ -129,6 +133,21 @@ assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with
 assert_file_contains "$DOCKERFILE_PATH" 'ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini'
 assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
+assert_file_contains "$README_PATH" '## Features'
+assert_file_contains "$README_PATH" '## Supported Images'
+assert_file_contains "$README_PATH" '## Quick Start'
+assert_file_contains "$README_PATH" '## Rootless Docker'
+assert_file_contains "$README_PATH" '## Repository Development'
+assert_file_contains "$README_PATH" '## Project Documentation'
+assert_file_contains "$README_PATH" 'CONTAINER_UID: "0"'
+assert_file_contains "$README_PATH" 'SERVICE_PHPFPM_OPTS: "-R"'
+assert_file_contains "$DOCS_README_PATH" '**Rootless Docker daemon**'
+assert_file_contains "$MAINTENANCE_PATH" '## Rootless Docker Bind Mounts'
+assert_file_contains "$MAINTENANCE_PATH" 'user: "0:0"'
+assert_file_contains "$MAINTENANCE_PATH" 'CONTAINER_UID: "0"'
+assert_file_contains "$MAINTENANCE_PATH" 'SERVICE_PHPFPM_OPTS: "-R"'
+assert_file_contains "$MAINTENANCE_PATH" 'Do not use this mode with a rootful Docker daemon.'
+assert_file_contains "$DECISIONS_PATH" '## Use One Image For Rootless Docker'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'os_image: ubuntu2404'
 assert_file_contains "$SEMAPHORE_PATH" 'global_job_config:'
