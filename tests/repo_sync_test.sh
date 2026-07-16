@@ -267,6 +267,18 @@ broken_contract="$dockerfile_content"$'\n        ffmpeg \\\n'
 contract_missing="$(image_contract_missing_invariants "$broken_contract")"
 assert_contains "$contract_missing" 'optional base package absent: ffmpeg'
 
+buster_contract="${dockerfile_content/libwebp7/libwebp6}"
+contract_missing="$(image_contract_missing_invariants "$buster_contract")"
+[[ -z "$contract_missing" ]] || {
+    echo "Debian Buster WebP runtime package should satisfy the image contract:" >&2
+    echo "$contract_missing" >&2
+    exit 1
+}
+
+broken_contract="${dockerfile_content/libwebp7/libwebp-runtime-missing}"
+contract_missing="$(image_contract_missing_invariants "$broken_contract")"
+assert_contains "$contract_missing" 'WebP runtime package: libwebp7 or libwebp6'
+
 assert_file_contains "$SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/git_worktree.sh"'
 assert_file_contains "$SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/image_contract.sh"'
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
