@@ -11,6 +11,12 @@ files.
   accepted PHP extension installer image refs.
 - `scripts/ci/docker_build.sh`: CI-provider-neutral Docker build and publish
   behavior. Semaphore is only the current adapter.
+- `scripts/lib/release_ref.sh`: provider-neutral ref normalization, build and
+  publish eligibility, and PHP-branch tag conversion.
+- `scripts/lib/image_contract.sh`: maintained Dockerfile invariants for custom
+  ImageMagick, bundled imagick, WebP support, and downstream extension tooling.
+- `scripts/lib/git_worktree.sh`: temporary worktree transaction lifecycle used
+  by repository synchronization and version bootstrap flows.
 - `Dockerfile.ubuntu`: maintained `latest` image build path.
 - `docs/maintenance.md`: human maintenance runbook for updates, branch
   propagation, image verification, and release flow.
@@ -38,6 +44,10 @@ tagging or publishing an image.
 
 **Bundled imagick**: the PECL `imagick` extension included in the published
 image and linked against the custom ImageMagick installation under `/usr/local`.
+
+**Optional application tooling**: operating-system commands such as
+`jpegoptim`, `webp`, `ffmpeg`, and `mariadb-client` that downstream images add
+when their application uses them. They are not part of the base image contract.
 
 **Shared file**: a repository maintenance file that should be propagated from
 `latest` to PHP branches because it is not branch-version-specific.

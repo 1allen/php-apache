@@ -2,8 +2,9 @@
 
 This project maintains custom PHP Apache images derived from
 `webdevops/php-apache`. The image adds a current ImageMagick build with WebP
-support, PECL `imagick`, common media/database CLI tools, `gmp`, and the
-`install-php-extensions` helper for downstream customization.
+support, PECL `imagick`, `gmp`, and the `install-php-extensions` helper for
+downstream customization. Application-specific media and database CLIs belong
+in downstream images.
 
 Upstream references:
 
@@ -26,6 +27,11 @@ As of 2026-06-28:
 - PECL `imagick` is pinned to `3.8.1`.
 - ImageMagick and PECL `imagick` source archives are verified with SHA-256
   checksums in `Dockerfile.ubuntu`.
+- The final stage installs WebP runtime libraries explicitly and verifies that
+  both ImageMagick and PHP imagick expose working WebP support. The standalone
+  `webp` CLI package is optional downstream tooling.
+- ImageMagick is configured with `--without-x`; this headless server image does
+  not bundle `libxt6` or promise the X11-only display commands.
 - `install-php-extensions` is copied from
   the installer image configured in `config/php-branches.conf` into
   `/usr/local/bin`.
@@ -97,6 +103,8 @@ Useful verification commands after a build:
 docker run --rm php-apache:local php -m | grep -E '^(gmp|imagick)$'
 docker run --rm php-apache:local php --ri imagick
 docker run --rm php-apache:local sh -lc 'ldd "$(php-config --extension-dir)/imagick.so" | grep -i magick'
+docker run --rm php-apache:local sh -lc 'magick -size 2x2 xc:white /tmp/check.webp && magick identify /tmp/check.webp'
+docker run --rm php-apache:local php -r 'var_export(Imagick::queryFormats("WEBP"));'
 docker run --rm php-apache:local command -v install-php-extensions
 ```
 
@@ -282,6 +290,29 @@ RUN install-php-extensions protobuf-4.30.2 grpc-1.72.0 redis-6.2.0
 
 Use the installer for extension dependencies, but keep application packages in
 the downstream Dockerfile so this base image stays broadly reusable.
+
+Install optional operating-system tools by application capability rather than
+growing the shared base image:
+
+- image optimization: `jpegoptim`, `webp`;
+- media processing: `ffmpeg`;
+- database administration: `mariadb-client`.
+
+For example, an application that needs all of the legacy tools can preserve the
+old production behavior downstream:
+
+```Dockerfile
+FROM 1allen/php-apache:8.5
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        jpegoptim webp ffmpeg mariadb-client \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Delete packages the application does not call. Installing `webp` here adds its
+CLI tools; the base image already carries the runtime libraries required by its
+tested ImageMagick/imagick WebP contract.
 
 ## Branch Flow
 

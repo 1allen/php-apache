@@ -16,6 +16,11 @@ CI-provider-specific YAML should stay as a thin adapter. The stable interface is
 `CI_GIT_REF_TYPE` inputs, because this project expects to move off Semaphore CI
 eventually.
 
+Provider variables terminate at `scripts/lib/release_ref.sh`. That module owns
+normalization, build and publish classification, and PHP-branch tag conversion;
+the Docker build, post-publish scan, and tag update scripts remain separate
+adapters.
+
 Semaphore trigger selection is a project setting, not a pipeline-block concern.
 Use YAML to describe the build and publish flow, but use Semaphore's "What to
 build" settings to avoid duplicate PR statuses from both pull-request and
@@ -40,6 +45,23 @@ This keeps copied artifact paths aligned with their runtime location while still
 allowing the final image to copy only the staged `/usr/local` tree from the
 builder stage.
 
+## Keep The Base Image Focused
+
+The maintained image contract is Apache/PHP with custom ImageMagick, bundled
+imagick and GMP, tested WebP support, and downstream PHP-extension installation.
+Standalone image, media, and database command-line tools are application
+choices. Keep `jpegoptim`, `webp`, `ffmpeg`, and `mariadb-client` in downstream
+Dockerfiles so applications can preserve their production behavior without
+making every consumer inherit those packages and dependency trees.
+
+WebP format support is different from the `webp` CLI. Build ImageMagick with
+`libwebp-dev`, install its runtime libraries explicitly in the final stage, and
+test WebP through both ImageMagick and PHP imagick.
+
+The image is headless and does not promise ImageMagick's X11 commands. Configure
+ImageMagick with `--without-x` instead of carrying `libxt6` solely to satisfy an
+unused display interface.
+
 ## Use One Image For Rootless Docker
 
 Rootless Docker bind-mount compatibility should be an explicit runtime mode of
@@ -55,3 +77,11 @@ same configuration on a rootful daemon would run PHP-FPM as actual container
 root and create root-owned host files. A separate image tag would not remove
 that runtime distinction and would add another branch of image behavior to
 maintain.
+
+## Concentrate Maintenance Policy
+
+Release-ref classification, image-contract validation, and temporary Git
+worktree lifecycle each have one maintained module under `scripts/lib`. CI,
+repository synchronization, and tag scripts are adapters at those seams. Tests
+should exercise module interfaces and command outcomes rather than duplicating
+private implementation text.

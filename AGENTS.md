@@ -31,6 +31,14 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   pathing.
 - Keep Docker build and publish behavior in `scripts/ci/docker_build.sh`; CI
   YAML should be a thin provider adapter. Semaphore is current, not permanent.
+- Keep provider-ref classification in `scripts/lib/release_ref.sh`, maintained
+  Dockerfile invariants in `scripts/lib/image_contract.sh`, and temporary Git
+  worktree mechanics in `scripts/lib/git_worktree.sh`.
+- Keep WebP support in the base image and verify it through ImageMagick and PHP
+  imagick. Keep `jpegoptim`, the `webp` CLI, `ffmpeg`, and `mariadb-client` as
+  documented downstream options rather than bundled base-image tools.
+- Keep the image headless with ImageMagick `--without-x`; do not restore
+  `libxt6` unless X11 operations become an explicit maintained feature.
 - PR branches and `latest` are build-only. Docker Hub publishing is limited to
   `phpXX` branches and version-like git tags.
 

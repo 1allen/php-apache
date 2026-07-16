@@ -16,36 +16,12 @@ MAINTENANCE_PATH="$ROOT_DIR/docs/maintenance.md"
 DECISIONS_PATH="$ROOT_DIR/docs/decisions.md"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
 SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
+RELEASE_REF_PATH="$ROOT_DIR/scripts/lib/release_ref.sh"
+IMAGE_CONTRACT_PATH="$ROOT_DIR/scripts/lib/image_contract.sh"
+GIT_WORKTREE_PATH="$ROOT_DIR/scripts/lib/git_worktree.sh"
 
-assert_contains() {
-    local haystack="$1"
-    local needle="$2"
-
-    if [[ "$haystack" != *"$needle"* ]]; then
-        echo "Expected output to contain: $needle" >&2
-        exit 1
-    fi
-}
-
-assert_file_contains() {
-    local file_path="$1"
-    local pattern="$2"
-
-    grep -Fq -- "$pattern" "$file_path" || {
-        echo "Expected $file_path to contain: $pattern" >&2
-        exit 1
-    }
-}
-
-assert_file_not_contains() {
-    local file_path="$1"
-    local pattern="$2"
-
-    if grep -Fq -- "$pattern" "$file_path"; then
-        echo "Expected $file_path not to contain: $pattern" >&2
-        exit 1
-    fi
-}
+# shellcheck disable=SC1091
+source "$ROOT_DIR/tests/test_helper.sh"
 
 [[ -f "$MANIFEST_PATH" ]] || {
     echo "Missing manifest: $MANIFEST_PATH" >&2
@@ -54,6 +30,10 @@ assert_file_not_contains() {
 
 # shellcheck disable=SC1090
 source "$MANIFEST_PATH"
+# shellcheck disable=SC1090
+source "$RELEASE_REF_PATH"
+# shellcheck disable=SC1090
+source "$IMAGE_CONTRACT_PATH"
 
 [[ -x "$SCRIPT_PATH" ]] || {
     echo "Missing executable sync script: $SCRIPT_PATH" >&2
@@ -104,8 +84,8 @@ assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410
     exit 1
 }
 
-[[ -n "$PUBLISH_TAG_PATTERN" ]] || {
-    echo "Expected PUBLISH_TAG_PATTERN to be configured." >&2
+[[ -n "$PUBLISH_TAG_PATTERN" && -n "$PHP_BRANCH_PATTERN" ]] || {
+    echo "Expected release-ref patterns to be configured." >&2
     exit 1
 }
 
@@ -130,6 +110,21 @@ assert_file_contains "$DOCKERFILE_PATH" 'COPY --chown=$UID:$GID --from=imagemagi
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
 assert_file_contains "$DOCKERFILE_PATH" 'install-php-extensions gmp'
 assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with-imagick=/usr/local'
+assert_file_contains "$DOCKERFILE_PATH" '--without-x'
+assert_file_contains "$DOCKERFILE_PATH" 'libwebp7'
+assert_file_contains "$DOCKERFILE_PATH" 'libwebpdemux2'
+assert_file_contains "$DOCKERFILE_PATH" 'libwebpmux3'
+assert_file_contains "$DOCKERFILE_PATH" 'magick -size 2x2 xc:white /tmp/webp-contract.webp'
+assert_file_contains "$DOCKERFILE_PATH" 'Imagick::queryFormats("WEBP")'
+assert_file_not_contains "$DOCKERFILE_PATH" "        jpegoptim \\"
+assert_file_not_contains "$DOCKERFILE_PATH" "        mariadb-client \\"
+assert_file_not_contains "$DOCKERFILE_PATH" "        webp \\"
+assert_file_not_contains "$DOCKERFILE_PATH" "        ffmpeg \\"
+assert_file_not_contains "$DOCKERFILE_PATH" "        libxt6 \\"
+assert_file_contains "$ROOT_DIR/README.md" '## Downstream Customization'
+for optional_package in jpegoptim webp ffmpeg mariadb-client; do
+    assert_file_contains "$ROOT_DIR/README.md" "$optional_package"
+done
 assert_file_contains "$DOCKERFILE_PATH" 'ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini'
 assert_file_contains "$DOCKERFILE_PATH" 'ldd "$ioncube_loader"'
 assert_file_contains "$DOCKERFILE_PATH" 'groupmod -g "$GID" application'
@@ -217,60 +212,73 @@ if grep -Eq "name: (BUILDER_IMAGE|DOCKER_USERNAME|IMAGE_NAME|DOCKER_BUILDKIT)" "
     exit 1
 fi
 
-assert_file_contains "$SCRIPT_PATH" 'commit.gpgsign=false commit'
-assert_file_contains "$SCRIPT_PATH" 'worktree prune'
-assert_file_contains "$SCRIPT_PATH" 'use_worktree_as_source_branch'
-assert_file_contains "$SCRIPT_PATH" 'curl -fsSL --retry 3 --retry-connrefused --connect-timeout 15'
-assert_file_contains "$SCRIPT_PATH" 'verify-image-tooling'
-assert_file_contains "$SCRIPT_PATH" 'sync-shared [--apply] [branch...]'
-assert_file_contains "$SCRIPT_PATH" 'target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")'
-assert_file_contains "$SCRIPT_PATH" 'php_extension_installer_source_present'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDKIT_INLINE_CACHE=1'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'DOCKER_USERNAME="${DOCKER_USERNAME:-$DEFAULT_DOCKER_USERNAME}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'BUILDER_IMAGE="${BUILDER_IMAGE:-$DEFAULT_BUILDER_IMAGE}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" '--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/config/php-branches.conf"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_BRANCH="${CI_GIT_BRANCH:-${SEMAPHORE_GIT_BRANCH:-${CIRCLE_BRANCH:-}}}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_TAG="${CI_GIT_TAG:-${SEMAPHORE_GIT_TAG_NAME:-${CIRCLE_TAG:-}}}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "branch"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'GITHUB_REF_TYPE:-}" == "tag"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'docker build "${build_args[@]}" "$BUILD_CONTEXT"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'CI_GIT_REF_TYPE="${CI_GIT_REF_TYPE:-${SEMAPHORE_GIT_REF_TYPE:-${GITHUB_REF_TYPE:-}}}"'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish from pull-request ref.'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Refusing to publish non-version tag'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Non-publish ref: skipping Docker build'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'build-publish'
-assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'Build-only branch: not publishing image'
+for module_path in "$RELEASE_REF_PATH" "$IMAGE_CONTRACT_PATH" "$GIT_WORKTREE_PATH"; do
+    [[ -f "$module_path" ]] || {
+        echo "Missing maintenance module: $module_path" >&2
+        exit 1
+    }
+done
+
+# shellcheck disable=SC2030
+release_ref_result="$(
+    export CI_GIT_BRANCH=php85 CI_GIT_TAG='' CI_GIT_REF_TYPE=branch
+    release_ref_resolve
+    printf '%s|%s|%s|%s\n' "$RELEASE_REF_BRANCH" "$RELEASE_REF_TAG" "$RELEASE_REF_TYPE" "$RELEASE_REF_PUBLISH_TAG"
+)"
+[[ "$release_ref_result" == 'php85||branch|php85' ]] || {
+    echo "Unexpected PHP branch classification: $release_ref_result" >&2
+    exit 1
+}
+
+# shellcheck disable=SC2031
+release_ref_result="$(
+    export CI_GIT_BRANCH='' CI_GIT_TAG='' CI_GIT_REF_TYPE=''
+    export GITHUB_REF_TYPE=tag GITHUB_REF_NAME=8.5.1
+    release_ref_resolve
+    printf '%s|%s|%s\n' "$RELEASE_REF_TAG" "$RELEASE_REF_TYPE" "$RELEASE_REF_PUBLISH_TAG"
+)"
+[[ "$release_ref_result" == '8.5.1|tag|8.5.1' ]] || {
+    echo "Unexpected GitHub tag normalization: $release_ref_result" >&2
+    exit 1
+}
+
+[[ "$(release_ref_branch_to_version php85)" == '8.5' ]] || {
+    echo "Expected php85 to convert to tag 8.5" >&2
+    exit 1
+}
+
+dockerfile_content="$(<"$DOCKERFILE_PATH")"
+contract_missing="$(image_contract_missing_invariants "$dockerfile_content")"
+[[ -z "$contract_missing" ]] || {
+    echo "Maintained Dockerfile violates image contract:" >&2
+    echo "$contract_missing" >&2
+    exit 1
+}
+
+broken_contract="${dockerfile_content/make install DESTDIR=\/tmp\/imgck/make install}"
+contract_missing="$(image_contract_missing_invariants "$broken_contract")"
+assert_contains "$contract_missing" 'make install DESTDIR=/tmp/imgck'
+
+broken_contract="$dockerfile_content"$'\n        ffmpeg \\\n'
+contract_missing="$(image_contract_missing_invariants "$broken_contract")"
+assert_contains "$contract_missing" 'optional base package absent: ffmpeg'
+
+assert_file_contains "$SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/git_worktree.sh"'
+assert_file_contains "$SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/image_contract.sh"'
+assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
+assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
+assert_file_contains "$TAGS_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
 assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'trivy'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:latest}"'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'docker run --rm "$TRIVY_IMAGE" image --exit-code 0 --severity HIGH,CRITICAL "$image_ref"'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Warning: non-blocking Trivy scan failed for $image_ref'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan pull-request ref.'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan non-version tag'
-assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'Refusing to scan non-publish branch'
-assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
-assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches+=("$1")'
-assert_file_contains "$TAGS_SCRIPT_PATH" 'target_branches=("${SUPPORTED_PHP_BRANCHES[@]}")'
-assert_file_contains "$TAGS_SCRIPT_PATH" 'echo "${version:0:1}.${version:1}"'
 
 tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
 assert_contains "$tooling_output" "Image tooling branches:"
 assert_contains "$tooling_output" "latest: ok"
 
-supported_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling)"
-assert_contains "$supported_tooling_output" "php80"
-assert_contains "$supported_tooling_output" "php85"
-assert_contains "$supported_tooling_output" "php80: ok"
-assert_contains "$supported_tooling_output" "php85: ok"
-
 legacy_tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling php73 php74 || true)"
 assert_contains "$legacy_tooling_output" "php73"
 assert_contains "$legacy_tooling_output" "php74"
 
-TMP_DOCKER_BIN="$(mktemp -d "${TMPDIR:-/tmp}/ci-docker-bin.XXXXXX")"
+test_temp_dir TMP_DOCKER_BIN ci-docker-bin
 CI_DOCKER_LOG="$TMP_DOCKER_BIN/docker.log"
 PR_PUBLISH_OUTPUT="$TMP_DOCKER_BIN/pr-publish.out"
 TAG_PUBLISH_OUTPUT="$TMP_DOCKER_BIN/tag-publish.out"
@@ -278,19 +286,7 @@ export CI_DOCKER_LOG
 
 default_image_ref="$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME"
 
-cat > "$TMP_DOCKER_BIN/docker" <<'EOF'
-#!/usr/bin/env bash
-printf 'docker %s\n' "$*" >> "$CI_DOCKER_LOG"
-if [[ "${1:-}" == "run" && "$*" == *"failing-trivy"* ]]; then
-    exit 42
-fi
-case "${1:-}" in
-    login)
-        cat >/dev/null
-        ;;
-esac
-EOF
-chmod +x "$TMP_DOCKER_BIN/docker"
+install_docker_capture "$TMP_DOCKER_BIN"
 
 feature_push_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=feature/test CI_GIT_REF_TYPE=branch bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
 assert_contains "$feature_push_ci_output" 'Non-publish ref: skipping Docker build'
@@ -359,11 +355,13 @@ fi
 assert_file_contains "$TAG_PUBLISH_OUTPUT" 'Refusing to publish non-version tag: latest.'
 rm -rf "$TMP_DOCKER_BIN"
 
-TMP_REPO="$(mktemp -d "${TMPDIR:-/tmp}/repo-sync-test.XXXXXX")"
-trap 'rm -rf "$TMP_REPO"' EXIT
+test_temp_dir TMP_REPO repo-sync-test
 
-mkdir -p "$TMP_REPO/scripts" "$TMP_REPO/config"
+mkdir -p "$TMP_REPO/scripts/lib" "$TMP_REPO/config"
 cp "$SCRIPT_PATH" "$TMP_REPO/scripts/repo_sync.sh"
+cp "$RELEASE_REF_PATH" "$TMP_REPO/scripts/lib/release_ref.sh"
+cp "$IMAGE_CONTRACT_PATH" "$TMP_REPO/scripts/lib/image_contract.sh"
+cp "$GIT_WORKTREE_PATH" "$TMP_REPO/scripts/lib/git_worktree.sh"
 cp "$MANIFEST_PATH" "$TMP_REPO/config/php-branches.conf"
 cp "$DOCKERFILE_PATH" "$TMP_REPO/Dockerfile.ubuntu"
 chmod +x "$TMP_REPO/scripts/repo_sync.sh"
@@ -380,6 +378,22 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
     assert_contains "$bootstrap_apply_output" "Target branch: php85"
     assert_contains "$bootstrap_apply_output" "Created php85"
     git show-ref --verify --quiet refs/heads/php85
+
+    if bash -c '
+        set -euo pipefail
+        source scripts/lib/git_worktree.sh
+        trap git_worktree_transaction_cleanup EXIT
+        git_worktree_transaction_begin "$PWD"
+        git_worktree_transaction_create_branch php86 latest
+        exit 42
+    '; then
+        echo "Expected failed worktree transaction fixture to fail." >&2
+        exit 1
+    fi
+    if git show-ref --verify --quiet refs/heads/php86; then
+        echo "Expected failed worktree transaction to remove its created branch." >&2
+        exit 1
+    fi
 )
 
 echo "repo_sync_test.sh: PASS"
