@@ -117,6 +117,13 @@ when it points to a missing or unloadable ionCube loader, because that inherited
 configuration causes PHP startup warnings even though ionCube is not part of
 this image's maintained feature set.
 
+The ImageMagick builder distribution must also be ABI-compatible with the final
+runtime base for shared libraries that are not staged under `/usr/local`.
+`php80` uses the Buster base and therefore pins
+`spritsail/debian-builder:buster`; using the floating builder links ImageMagick
+to newer libraries such as `libtiff.so.6` that Buster cannot provide. Preserve
+branch-local builder pins while applying equivalent Dockerfile behavior.
+
 ## Rootless Docker Bind Mounts
 
 Use one published image for both ordinary and rootless Docker environments.
@@ -325,6 +332,7 @@ machinery:
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
+| Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
 
 Before changing external state, preview the exact commands and their branch,
@@ -334,6 +342,29 @@ scripts, or new orchestration unless the maintained interface cannot satisfy a
 specific requirement. Document the exact gap and obtain explicit approval
 before designing an alternative. If the documented behavior is unclear, inspect
 the implementation and ask; do not import a generic workflow.
+
+### Image Size Metrics
+
+Use the registry-compressed linux/amd64 size to evaluate base-image cleanup:
+
+```bash
+bash scripts/image_metrics.sh
+bash scripts/image_metrics.sh --format tsv php80 php85
+```
+
+The default report compares supported `phpXX` tags with the immutable
+pre-cleanup Docker Hub snapshot in `config/image-size-baseline.tsv`. The
+snapshot was queried on 2026-07-16 before PR #6's supported branch tags were
+republished; each row preserves the API's prior digest, compressed size, and
+`last_updated` value. Positive `Saved` values mean the published image became
+smaller. The TSV format emits exact bytes, percentages, current and baseline
+digests, and the baseline tag timestamp for release records or further
+analysis.
+
+This is a read-only observation interface. It does not build, publish, retag,
+pull, or scan images, and size changes are not a release gate. Docker Hub's
+compressed size is intentionally different from `docker images` virtual size;
+do not mix the two metrics in one comparison.
 
 ## Branch Flow
 

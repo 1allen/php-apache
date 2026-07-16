@@ -7,9 +7,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENTS_PATH="$ROOT_DIR/AGENTS.md"
 SCRIPT_PATH="$ROOT_DIR/scripts/repo_sync.sh"
 TAGS_SCRIPT_PATH="$ROOT_DIR/scripts/tags_update.sh"
+IMAGE_METRICS_SCRIPT_PATH="$ROOT_DIR/scripts/image_metrics.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
+IMAGE_SIZE_BASELINE_PATH="$ROOT_DIR/config/image-size-baseline.tsv"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
 README_PATH="$ROOT_DIR/README.md"
 DOCS_README_PATH="$ROOT_DIR/docs/README.md"
@@ -46,6 +48,11 @@ source "$IMAGE_CONTRACT_PATH"
     exit 1
 }
 
+[[ -x "$IMAGE_METRICS_SCRIPT_PATH" ]] || {
+    echo "Missing executable image metrics script: $IMAGE_METRICS_SCRIPT_PATH" >&2
+    exit 1
+}
+
 [[ -x "$CI_DOCKER_BUILD_SCRIPT_PATH" ]] || {
     echo "Missing executable CI Docker build script: $CI_DOCKER_BUILD_SCRIPT_PATH" >&2
     exit 1
@@ -66,6 +73,8 @@ assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
 assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
+assert_contains "$status_output" "scripts/image_metrics.sh"
+assert_contains "$status_output" "config/image-size-baseline.tsv"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -99,6 +108,41 @@ if grep -Eq '^(SEMAPHORE_MACHINE_TYPE|SEMAPHORE_OS_IMAGE)=' "$MANIFEST_PATH"; th
     echo "Expected Semaphore adapter settings to stay in .semaphore/semaphore.yml, not config/php-branches.conf." >&2
     exit 1
 fi
+
+assert_file_contains "$IMAGE_SIZE_BASELINE_PATH" $'php80\tsha256:4a971067e24945343795f25be39da922ade64270ff25e61928051e392dd8d3aa\t528402850'
+assert_file_contains "$IMAGE_SIZE_BASELINE_PATH" $'php85\tsha256:62aebc2ea3adb603f438814f73914dcb822acffe2130bfcc537212d749ef7501\t645640060'
+
+test_temp_dir TMP_IMAGE_METRICS image-metrics
+metrics_api_root="$TMP_IMAGE_METRICS/1allen/php-apache/tags"
+mkdir -p "$metrics_api_root"
+
+cat > "$metrics_api_root/php85" <<'EOF'
+{"digest":"sha256:current-php85","images":[{"architecture":"amd64","os":"linux","size":600000000}]}
+EOF
+
+metrics_output="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv php85)"
+assert_contains "$metrics_output" $'tag\tbaseline_bytes\tcurrent_bytes\tsaved_bytes\tsaved_percent\tcurrent_digest\tbaseline_digest\tbaseline_tag_last_updated'
+assert_contains "$metrics_output" $'php85\t645640060\t600000000\t45640060\t7.07\tsha256:current-php85'
+assert_contains "$metrics_output" $'TOTAL\t645640060\t600000000\t45640060\t7.07\t-\t-\t-'
+
+metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" php85)"
+assert_contains "$metrics_markdown" '| php85 | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 |'
+assert_contains "$metrics_markdown" '| **Total (1 tag)** | **615.7 MiB** | **572.2 MiB** | **43.5 MiB** | **7.07%** | - |'
+
+cat > "$metrics_api_root/php84" <<'EOF'
+{"digest":"sha256:arm-only","images":[{"architecture":"arm64","os":"linux","size":1234}]}
+EOF
+
+if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv php84 >"$TMP_IMAGE_METRICS/missing-amd64.out" 2>&1; then
+    echo "Expected image metrics to reject metadata without linux/amd64 size." >&2
+    exit 1
+fi
+assert_file_contains "$TMP_IMAGE_METRICS/missing-amd64.out" 'Missing linux/amd64 digest or size'
+
+assert_file_contains "$README_PATH" 'bash scripts/image_metrics.sh'
+assert_file_contains "$DOCS_README_PATH" 'config/image-size-baseline.tsv'
+assert_file_contains "$MAINTENANCE_PATH" 'pre-cleanup Docker Hub snapshot'
+assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
 
 assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
