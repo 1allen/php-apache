@@ -16,6 +16,7 @@ BUILDER_IMAGE="${BUILDER_IMAGE:-$DEFAULT_BUILDER_IMAGE}"
 CI_DOCKER_MODE="${CI_DOCKER_MODE:-build}"
 export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 cache_from_args=()
+cache_source_refs=()
 
 die() {
     echo "Error: $*" >&2
@@ -26,6 +27,43 @@ docker_pull_cache_source() {
     local image_ref="$1"
 
     docker pull "$image_ref" || true
+}
+
+add_cache_source() {
+    local image_ref="$1"
+    local existing
+
+    for existing in "${cache_source_refs[@]+"${cache_source_refs[@]}"}"; do
+        [[ "$existing" == "$image_ref" ]] && return 0
+    done
+
+    docker_pull_cache_source "$image_ref"
+    cache_source_refs+=("$image_ref")
+    cache_from_args+=(--cache-from "$image_ref")
+}
+
+write_build_metrics() {
+    local output_path="$1"
+    local tag="$2"
+    local cache_prepare_seconds="$3"
+    local build_seconds="$4"
+    local publish_seconds="$5"
+    local total_seconds="$6"
+    local cache_sources
+    local output_dir
+
+    if [[ "$output_path" == */* ]]; then
+        output_dir="${output_path%/*}"
+        [[ -d "$output_dir" ]] || die "Build metrics directory does not exist: $output_dir"
+    fi
+
+    cache_sources="$(IFS=,; printf '%s' "${cache_source_refs[*]}")"
+    {
+        printf 'tag\tcache_prepare_seconds\tbuild_seconds\tpublish_seconds\ttotal_seconds\tcache_sources\n'
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$tag" "$cache_prepare_seconds" "$build_seconds" \
+            "$publish_seconds" "$total_seconds" "$cache_sources"
+    } >"$output_path"
 }
 
 case "$CI_DOCKER_MODE" in
@@ -53,15 +91,16 @@ if ! release_ref_requires_build; then
     exit 0
 fi
 
+script_started_seconds=$SECONDS
+cache_started_seconds=$SECONDS
+
 if release_ref_is_publishable; then
-    docker_pull_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
-    cache_from_args+=(--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG")
+    add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
 fi
 
-docker_pull_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:latest"
-docker_pull_cache_source "$BUILDER_IMAGE"
-cache_from_args+=(--cache-from "$DOCKER_USERNAME/$IMAGE_NAME:latest")
-cache_from_args+=(--cache-from "$BUILDER_IMAGE")
+add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:latest"
+add_cache_source "$BUILDER_IMAGE"
+cache_prepare_seconds=$((SECONDS - cache_started_seconds))
 
 build_args=(
     --pull
@@ -74,13 +113,24 @@ if release_ref_is_publishable; then
     build_args+=(-t "$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG")
 fi
 
+build_started_seconds=$SECONDS
 docker build "${build_args[@]}" "$BUILD_CONTEXT"
+build_seconds=$((SECONDS - build_started_seconds))
+echo "Docker build completed in ${build_seconds}s"
 
 if release_ref_is_publishable && [[ "$CI_DOCKER_MODE" == "build-publish" ]]; then
     [[ -n "${DOCKER_PASSWORD:-}" ]] || die "DOCKER_PASSWORD is required to publish $DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG."
+    publish_started_seconds=$SECONDS
     echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
     docker tag "$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG" "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
     docker push "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
+    publish_seconds=$((SECONDS - publish_started_seconds))
+    total_seconds=$((SECONDS - script_started_seconds))
+    if [[ -n "${CI_BUILD_METRICS_FILE:-}" ]]; then
+        write_build_metrics "$CI_BUILD_METRICS_FILE" "$RELEASE_REF_PUBLISH_TAG" \
+            "$cache_prepare_seconds" "$build_seconds" "$publish_seconds" "$total_seconds"
+        echo "Build metrics written to $CI_BUILD_METRICS_FILE"
+    fi
 elif release_ref_is_publishable; then
     echo "Publishable ref built without publishing: $IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
 else

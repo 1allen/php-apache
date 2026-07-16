@@ -129,6 +129,31 @@ metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE
 assert_contains "$metrics_markdown" '| php85 | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 |'
 assert_contains "$metrics_markdown" '| **Total (1 tag)** | **615.7 MiB** | **572.2 MiB** | **43.5 MiB** | **7.07%** | - |'
 
+BUILD_METRICS_FIXTURE="$TMP_IMAGE_METRICS/build-metrics.tsv"
+cat > "$BUILD_METRICS_FIXTURE" <<'EOF'
+tag	cache_prepare_seconds	build_seconds	publish_seconds	total_seconds	cache_sources
+php85	3	42	7	55	1allen/php-apache:php85,1allen/php-apache:latest,spritsail/debian-builder:latest
+EOF
+
+timed_metrics_output="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$BUILD_METRICS_FIXTURE" --format tsv php85)"
+assert_contains "$timed_metrics_output" $'tag\tcache_prepare_seconds\tbuild_seconds\tpublish_seconds\ttotal_seconds\tbaseline_bytes\tcurrent_bytes\tsaved_bytes\tsaved_percent\tcurrent_digest\tbaseline_digest\tbaseline_tag_last_updated\tcache_sources'
+assert_contains "$timed_metrics_output" $'php85\t3\t42\t7\t55\t645640060\t600000000\t45640060\t7.07\tsha256:current-php85\tsha256:62aebc2ea3adb603f438814f73914dcb822acffe2130bfcc537212d749ef7501\t2026-06-28T16:59:25.063933Z\t1allen/php-apache:php85,1allen/php-apache:latest,spritsail/debian-builder:latest'
+
+timed_metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$BUILD_METRICS_FIXTURE" php85)"
+assert_contains "$timed_metrics_markdown" '| Tag | Cache prep | Build | Publish | Total | Baseline | Current | Saved | Saved % | Current digest | Cache sources |'
+assert_contains "$timed_metrics_markdown" '| php85 | 3s | 42s | 7s | 55s | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 | 1allen/php-apache:php85, 1allen/php-apache:latest, spritsail/debian-builder:latest |'
+
+INVALID_BUILD_METRICS_FIXTURE="$TMP_IMAGE_METRICS/invalid-build-metrics.tsv"
+cat > "$INVALID_BUILD_METRICS_FIXTURE" <<'EOF'
+tag	cache_prepare_seconds	build_seconds	publish_seconds	total_seconds	cache_sources
+php85	3	not-a-number	7	55	1allen/php-apache:php85
+EOF
+if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$INVALID_BUILD_METRICS_FIXTURE" php85 >"$TMP_IMAGE_METRICS/invalid-build-metrics.out" 2>&1; then
+    echo "Expected image metrics to reject an invalid build timing record." >&2
+    exit 1
+fi
+assert_file_contains "$TMP_IMAGE_METRICS/invalid-build-metrics.out" 'Missing valid build metrics for tag: php85'
+
 cat > "$metrics_api_root/php84" <<'EOF'
 {"digest":"sha256:arm-only","images":[{"architecture":"arm64","os":"linux","size":1234}]}
 EOF
@@ -143,6 +168,8 @@ assert_file_contains "$README_PATH" 'bash scripts/image_metrics.sh'
 assert_file_contains "$DOCS_README_PATH" 'config/image-size-baseline.tsv'
 assert_file_contains "$MAINTENANCE_PATH" 'pre-cleanup Docker Hub snapshot'
 assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
+assert_file_contains "$DECISIONS_PATH" '## Join Build And Image Metrics At A File Seam'
+assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv'
 
 assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
@@ -221,6 +248,9 @@ assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/trivy_scan.sh'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'value: build-publish'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dockerhub-1allen'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'CI_BUILD_METRICS_FILE=/tmp/php-apache-build-metrics.tsv'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'if ! bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv; then'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'Warning: release metrics report failed'
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '*run_docker_ci'
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '&run_docker_ci'
 
@@ -248,6 +278,8 @@ unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND p
 end
 abort "Publish image block must explicitly define no dependencies" unless publish.fetch("dependencies") == []
 abort "Publish image block must set publish mode" unless publish.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build-publish" }
+publish_commands = publish.fetch("task").fetch("jobs").fetch(0).fetch("commands")
+abort "Every publish job command must be a string" unless publish_commands.all? { |command| command.is_a?(String) }
 unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
     abort "Publish image block must receive dockerhub-1allen secret"
 end
@@ -382,10 +414,21 @@ if grep -Fq -- 'docker login' "$CI_DOCKER_LOG" || grep -Fq -- 'docker push' "$CI
 fi
 
 : > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
+BUILD_METRICS_OUTPUT="$TMP_DOCKER_BIN/build-metrics.tsv"
+publish_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish CI_BUILD_METRICS_FILE="$BUILD_METRICS_OUTPUT" DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
 assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:php85 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:php85 ."
 assert_file_contains "$CI_DOCKER_LOG" "docker login -u $DEFAULT_DOCKER_USERNAME --password-stdin"
 assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:php85"
+assert_contains "$publish_output" 'Docker build completed in'
+assert_file_contains "$BUILD_METRICS_OUTPUT" $'tag\tcache_prepare_seconds\tbuild_seconds\tpublish_seconds\ttotal_seconds\tcache_sources'
+if ! awk -F '\t' -v expected_cache="$default_image_ref:php85,$default_image_ref:latest,$DEFAULT_BUILDER_IMAGE" '
+    NR == 2 && $1 == "php85" && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ \
+        && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 == expected_cache { found = 1 }
+    END { exit !found }
+' "$BUILD_METRICS_OUTPUT"; then
+    echo "Expected build metrics to contain numeric timings and cache sources." >&2
+    exit 1
+fi
 if grep -Fq -- 'docker run --rm aquasec/trivy' "$CI_DOCKER_LOG"; then
     echo "Expected publish script not to run Trivy directly." >&2
     exit 1

@@ -12,7 +12,8 @@ files.
 - `scripts/ci/docker_build.sh`: CI-provider-neutral Docker build and publish
   behavior. Semaphore is only the current adapter.
 - `scripts/image_metrics.sh` and `config/image-size-baseline.tsv`: read-only
-  Docker Hub compressed-size reporting and the immutable pre-cleanup baseline.
+  Docker Hub compressed-size reporting, optional CI build-timing joins, and the
+  immutable pre-cleanup baseline.
 - `scripts/lib/release_ref.sh`: provider-neutral ref normalization, build and
   publish eligibility, and PHP-branch tag conversion.
 - `scripts/lib/image_contract.sh`: maintained Dockerfile invariants for custom
