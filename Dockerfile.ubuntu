@@ -2,7 +2,7 @@
 
 FROM mlocati/php-extension-installer:latest AS php-extension-installer
 
-FROM spritsail/debian-builder AS imagemagick-builder
+FROM spritsail/debian-builder:buster AS imagemagick-builder
 
 # https://github.com/ImageMagick/ImageMagick/releases
 ARG IMAGEMAGICK_VERSION=7.1.2-26
