@@ -58,6 +58,11 @@ This keeps copied artifact paths aligned with their runtime location while still
 allowing the final image to copy only the staged `/usr/local` tree from the
 builder stage.
 
+The builder's distribution must remain compatible with the final branch base
+for dynamically linked libraries outside that staged tree. Older image lines
+may pin a matching builder distribution; in particular, `php80` pairs its
+Buster runtime with `spritsail/debian-builder:buster`.
+
 ## Keep The Base Image Focused
 
 The maintained image contract is Apache/PHP with custom ImageMagick, bundled

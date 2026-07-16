@@ -117,6 +117,13 @@ when it points to a missing or unloadable ionCube loader, because that inherited
 configuration causes PHP startup warnings even though ionCube is not part of
 this image's maintained feature set.
 
+The ImageMagick builder distribution must also be ABI-compatible with the final
+runtime base for shared libraries that are not staged under `/usr/local`.
+`php80` uses the Buster base and therefore pins
+`spritsail/debian-builder:buster`; using the floating builder links ImageMagick
+to newer libraries such as `libtiff.so.6` that Buster cannot provide. Preserve
+branch-local builder pins while applying equivalent Dockerfile behavior.
+
 ## Rootless Docker Bind Mounts
 
 Use one published image for both ordinary and rootless Docker environments.

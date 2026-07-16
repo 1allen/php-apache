@@ -21,7 +21,8 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   critical emergency fix.
 - `Dockerfile.ubuntu` is the maintained image path. `Dockerfile.ubuntu` is not a
   shared file; apply equivalent Dockerfile behavior to supported `phpXX`
-  branches intentionally while preserving each branch's base PHP minor.
+  branches intentionally while preserving each branch's base PHP minor and
+  builder/runtime ABI compatibility pins.
 - `imagick` is a bundled feature. Keep the explicit pinned PECL source build
   unless you have verified that another installer path still ships `imagick` by
   default and links against custom ImageMagick under `/usr/local`.
