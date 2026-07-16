@@ -18,7 +18,11 @@ blocks:
       jobs:
         - name: docker publish
           commands:
-            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
+            - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" CI_BUILD_METRICS_FILE=/tmp/php-apache-build-metrics.tsv bash scripts/ci/docker_build.sh
+            - >-
+              if ! bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv; then
+                echo "Warning: release metrics report failed" >&2;
+              fi
       secrets:
         - name: dockerhub-1allen
   - name: scan published image
