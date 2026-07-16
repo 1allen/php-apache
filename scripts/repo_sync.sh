@@ -5,21 +5,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/config/php-branches.conf"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/git_worktree.sh"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/image_contract.sh"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/release_ref.sh"
 
-TMP_WORK_ROOT=""
-
-cleanup() {
-    local path
-
-    if [[ -n "${TMP_WORK_ROOT:-}" && -d "${TMP_WORK_ROOT:-}" ]]; then
-        while IFS= read -r path; do
-            git -C "$ROOT_DIR" worktree remove --force "$path" >/dev/null 2>&1 || true
-        done < <(git -C "$ROOT_DIR" worktree list --porcelain | awk '/^worktree / {print substr($0, 10)}' | grep "^$TMP_WORK_ROOT" || true)
-        rm -rf "$TMP_WORK_ROOT"
-    fi
-}
-
-trap cleanup EXIT
+trap git_worktree_transaction_cleanup EXIT
 
 usage() {
     cat <<'EOF'
@@ -66,23 +59,6 @@ branch_in_list() {
     return 1
 }
 
-php_extension_installer_source_present() {
-    local dockerfile_content="$1"
-    local image_ref
-
-    # shellcheck disable=SC2016
-    if [[ "$dockerfile_content" == *'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'* ]] \
-        && [[ "$dockerfile_content" == *"ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"* ]]; then
-        return 0
-    fi
-
-    for image_ref in "${PHP_EXTENSION_INSTALLER_IMAGE_REFS[@]}"; do
-        [[ "$dockerfile_content" == *"FROM $image_ref AS php-extension-installer"* ]] && return 0
-    done
-
-    return 1
-}
-
 branch_exists_local() {
     git -C "$ROOT_DIR" show-ref --verify --quiet "refs/heads/$1"
 }
@@ -101,15 +77,6 @@ use_worktree_as_source_branch() {
     branch_in_list "$current" "${SUPPORTED_PHP_BRANCHES[@]}" "${LEGACY_PHP_BRANCHES[@]}" && return 1
 
     return 0
-}
-
-require_clean_worktree() {
-    [[ -z "$(git -C "$ROOT_DIR" status --short)" ]] || die "Working tree must be clean before using --apply."
-}
-
-php_branch_to_version() {
-    local digits="${1#php}"
-    printf '%s.%s\n' "${digits:0:1}" "${digits:1}"
 }
 
 print_section() {
@@ -157,12 +124,6 @@ load_upstream_branches() {
         | sed -E 's/^"name":"([0-9]+\.[0-9]+)"$/php\1/' \
         | tr -d '.' \
         | sort -u
-}
-
-prepare_temp_root() {
-    [[ -n "${TMP_WORK_ROOT:-}" ]] && return
-    git -C "$ROOT_DIR" worktree prune >/dev/null 2>&1 || true
-    TMP_WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/php-apache-sync.XXXXXX")"
 }
 
 copy_if_changed() {
@@ -259,15 +220,15 @@ sync_shared_command() {
         target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
-    prepare_temp_root
-    source_worktree="$TMP_WORK_ROOT/source"
-    git -C "$ROOT_DIR" worktree add --detach "$source_worktree" "$BOOTSTRAP_SOURCE_BRANCH" >/dev/null
+    git_worktree_transaction_begin "$ROOT_DIR"
+    git_worktree_transaction_add source "$BOOTSTRAP_SOURCE_BRANCH" detached
+    source_worktree="$GIT_WORKTREE_PATH"
 
     echo "Source branch: $BOOTSTRAP_SOURCE_BRANCH"
     print_section "Target branches:" "${target_branches[@]}"
 
     if [[ $apply -eq 1 ]]; then
-        require_clean_worktree
+        git_worktree_transaction_require_clean || die "Working tree must be clean before using --apply."
     else
         echo "Dry run: no branch commits will be created."
     fi
@@ -278,8 +239,8 @@ sync_shared_command() {
             continue
         fi
 
-        worktree="$TMP_WORK_ROOT/$branch"
-        git -C "$ROOT_DIR" worktree add "$worktree" "$branch" >/dev/null
+        git_worktree_transaction_add "$branch" "$branch"
+        worktree="$GIT_WORKTREE_PATH"
         changed_files=()
 
         for file in "${SHARED_FILES[@]}"; do
@@ -298,7 +259,7 @@ sync_shared_command() {
 
         if [[ ${#changed_files[@]} -eq 0 ]]; then
             echo "$branch: already in sync."
-            git -C "$ROOT_DIR" worktree remove --force "$worktree" >/dev/null
+            git_worktree_transaction_remove "$worktree"
             continue
         fi
 
@@ -306,12 +267,11 @@ sync_shared_command() {
         print_section "$branch changes:" "${changed_files[@]}"
 
         if [[ $apply -eq 1 ]]; then
-            git -C "$worktree" add "${changed_files[@]}"
-            git -C "$worktree" -c commit.gpgsign=false commit -m "$message" >/dev/null
+            git_worktree_transaction_commit "$worktree" "$message" "${changed_files[@]}"
             echo "$branch: committed shared-file sync."
         fi
 
-        git -C "$ROOT_DIR" worktree remove --force "$worktree" >/dev/null
+        git_worktree_transaction_remove "$worktree"
     done
 
     if [[ $apply -eq 0 && $copied_any -eq 0 ]]; then
@@ -327,15 +287,6 @@ verify_image_tooling_command() {
     local missing_markers=()
     local failed=0
     local current
-    # shellcheck disable=SC2016
-    local required_markers=(
-        'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
-        'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
-        'install-php-extensions gmp'
-        'docker-php-ext-configure imagick --with-imagick=/usr/local'
-        'https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz'
-        'https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz'
-    )
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -378,15 +329,9 @@ verify_image_tooling_command() {
             continue
         fi
 
-        if ! php_extension_installer_source_present "$dockerfile_content"; then
-            missing_markers+=("php-extension-installer source from config/php-branches.conf")
-        fi
-
-        for marker in "${required_markers[@]}"; do
-            if [[ "$dockerfile_content" != *"$marker"* ]]; then
-                missing_markers+=("$marker")
-            fi
-        done
+        while IFS= read -r marker; do
+            [[ -n "$marker" ]] && missing_markers+=("$marker")
+        done < <(image_contract_missing_invariants "$dockerfile_content" || true)
 
         if [[ ${#missing_markers[@]} -eq 0 ]]; then
             echo "$branch: ok"
@@ -424,8 +369,8 @@ bootstrap_version_command() {
         shift
     done
 
-    [[ "$target_branch" =~ ^php[0-9]{2}$ ]] || die "Target branch must look like php85."
-    php_version="$(php_branch_to_version "$target_branch")"
+    [[ "$target_branch" =~ $PHP_BRANCH_PATTERN ]] || die "Target branch must look like php85."
+    php_version="$(release_ref_branch_to_version "$target_branch")"
 
     echo "Source branch: $BOOTSTRAP_SOURCE_BRANCH"
     echo "Target branch: $target_branch"
@@ -442,22 +387,23 @@ bootstrap_version_command() {
         return 0
     fi
 
-    require_clean_worktree
-    prepare_temp_root
+    git_worktree_transaction_begin "$ROOT_DIR"
+    git_worktree_transaction_require_clean || die "Working tree must be clean before using --apply."
 
-    git -C "$ROOT_DIR" branch "$target_branch" "$BOOTSTRAP_SOURCE_BRANCH"
-    worktree="$TMP_WORK_ROOT/$target_branch"
-    git -C "$ROOT_DIR" worktree add "$worktree" "$target_branch" >/dev/null
+    git_worktree_transaction_create_branch "$target_branch" "$BOOTSTRAP_SOURCE_BRANCH"
+    git_worktree_transaction_add "$target_branch" "$target_branch"
+    worktree="$GIT_WORKTREE_PATH"
 
     perl -0pi -e "s{FROM webdevops/php-apache:[0-9]+\\.[0-9]+}{FROM webdevops/php-apache:$php_version}" "$worktree/Dockerfile.ubuntu"
 
     if git -C "$worktree" diff --quiet -- Dockerfile.ubuntu; then
+        git_worktree_transaction_keep_branch "$target_branch"
         echo "Created $target_branch at $BOOTSTRAP_SOURCE_BRANCH without an extra bootstrap commit; Dockerfile.ubuntu already targets PHP $php_version."
         return 0
     fi
 
-    git -C "$worktree" add Dockerfile.ubuntu
-    git -C "$worktree" -c commit.gpgsign=false commit -m "chore: bootstrap $target_branch from $BOOTSTRAP_SOURCE_BRANCH" >/dev/null
+    git_worktree_transaction_commit "$worktree" "chore: bootstrap $target_branch from $BOOTSTRAP_SOURCE_BRANCH" Dockerfile.ubuntu
+    git_worktree_transaction_keep_branch "$target_branch"
     echo "Created $target_branch with a bootstrap commit."
 }
 

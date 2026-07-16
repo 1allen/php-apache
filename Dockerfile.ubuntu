@@ -30,6 +30,7 @@ RUN set -eux; \
     ./configure \
         --disable-docs \
         --without-magick-plus-plus \
+        --without-x \
         --with-webp \
         --prefix=/usr/local; \
     make -j"$(nproc)"; \
@@ -60,11 +61,9 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends --no-install-suggests \
         ca-certificates \
         curl \
-        jpegoptim \
-        mariadb-client \
-        webp \
-        ffmpeg \
-        libxt6 \
+        libwebp7 \
+        libwebpdemux2 \
+        libwebpmux3 \
         libmagickwand-dev; \
     rm -rf /var/lib/apt/lists/*
 
@@ -88,6 +87,9 @@ RUN set -eux; \
     mv "imagick-$IMAGICK_VERSION"/* /usr/src/php/ext/imagick; \
     docker-php-ext-configure imagick --with-imagick=/usr/local; \
     docker-php-ext-install -j"$(nproc)" imagick; \
+    magick -size 2x2 xc:white /tmp/webp-contract.webp; \
+    magick identify /tmp/webp-contract.webp; \
+    php -r 'exit(in_array("WEBP", Imagick::queryFormats("WEBP"), true) ? 0 : 1);'; \
     rm -rf imagick.tgz "imagick-$IMAGICK_VERSION"; \
     ldconfig /usr/local/lib; \
     apt-get purge -y libmagickwand-dev; \

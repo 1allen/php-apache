@@ -5,8 +5,8 @@ Maintained Apache and PHP container images based on
 newer pinned ImageMagick build and PECL `imagick` linked against it.
 
 The images are intended for PHP applications that need dependable image
-processing, common media and database command-line tools, and a straightforward
-way to add more PHP extensions downstream.
+processing and a straightforward way to add application-specific PHP
+extensions and command-line tools downstream.
 
 ## Features
 
@@ -14,7 +14,7 @@ way to add more PHP extensions downstream.
 - custom ImageMagick under `/usr/local`, including WebP support
 - bundled PECL `imagick`, compiled against the custom ImageMagick build
 - bundled `gmp` PHP extension
-- `jpegoptim`, `webp`, `ffmpeg`, and the MariaDB client
+- tested WebP support without requiring the standalone `webp` CLI
 - `install-php-extensions` available for downstream image customization
 - published, PHP-minor-specific image tags rather than a floating development
   tag
@@ -53,20 +53,38 @@ docker run --rm \
 Then open `http://localhost:8080`. Adapt the image tag, mount path, and document
 root to the application.
 
-## Downstream Extension Installs
+## Downstream Customization
 
-The final image includes the mlocati extension installer, so a downstream image
-can add supported extensions without downloading another installer:
+The final image includes the mlocati extension installer. Combine PHP extensions
+and only the operating-system tools the application uses in one downstream
+layer:
 
 ```Dockerfile
 FROM 1allen/php-apache:8.5
 
-RUN install-php-extensions protobuf grpc redis
+RUN set -eux; \
+    install-php-extensions protobuf grpc redis; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        jpegoptim \
+        webp \
+        ffmpeg \
+        mariadb-client; \
+    rm -rf /var/lib/apt/lists/*
 ```
 
-Pin extension versions in the downstream Dockerfile when reproducible builds
-require them. The bundled `imagick` extension should remain unchanged because
-it is intentionally compiled against this image's custom ImageMagick.
+`jpegoptim` and `webp` are image-optimization CLIs, `ffmpeg` is media tooling,
+and `mariadb-client` provides database administration commands. Remove
+unneeded lines from the example: fewer runtime packages have a larger impact
+than compressing commands into one layer. `--no-install-recommends` avoids
+optional dependency trees, and deleting `/var/lib/apt/lists` in the same layer
+keeps package indexes out of the resulting image.
+
+Pin extension versions when reproducible builds require them. The bundled
+`imagick` extension should remain unchanged because it is intentionally compiled
+against this image's custom ImageMagick. WebP support in bundled
+ImageMagick/imagick is part of the base contract and does not depend on the
+optional `webp` CLI.
 
 ## Rootless Docker
 
