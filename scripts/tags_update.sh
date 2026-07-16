@@ -5,15 +5,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/config/php-branches.conf"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/release_ref.sh"
 
 DRY_RUN=1
 target_branches=()
-
-convert_branch_to_tag() {
-    local branch_name="$1"
-    local version="${branch_name#php}"
-    echo "${version:0:1}.${version:1}"
-}
 
 run_cmd() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -68,14 +64,14 @@ if [[ ${#target_branches[@]} -eq 0 ]]; then
 fi
 
 for branch in "${target_branches[@]}"; do
-    [[ "$branch" =~ ^php[0-9][0-9]$ ]] || die "Branch must look like php85: $branch"
+    [[ "$branch" =~ $PHP_BRANCH_PATTERN ]] || die "Branch must look like php85: $branch"
 
     if ! git -C "$ROOT_DIR" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
         echo "Skipping $branch: missing origin/$branch"
         continue
     fi
 
-    tag="$(convert_branch_to_tag "$branch")"
+    tag="$(release_ref_branch_to_version "$branch")"
     commit_ref="origin/$branch"
 
     echo "Processing branch: $branch -> tag $tag"

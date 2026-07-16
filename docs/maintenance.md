@@ -2,8 +2,9 @@
 
 This project maintains custom PHP Apache images derived from
 `webdevops/php-apache`. The image adds a current ImageMagick build with WebP
-support, PECL `imagick`, common media/database CLI tools, `gmp`, and the
-`install-php-extensions` helper for downstream customization.
+support, PECL `imagick`, `gmp`, and the `install-php-extensions` helper for
+downstream customization. Application-specific media and database CLIs belong
+in downstream images.
 
 Upstream references:
 
@@ -26,6 +27,11 @@ As of 2026-06-28:
 - PECL `imagick` is pinned to `3.8.1`.
 - ImageMagick and PECL `imagick` source archives are verified with SHA-256
   checksums in `Dockerfile.ubuntu`.
+- The final stage installs WebP runtime libraries explicitly and verifies that
+  both ImageMagick and PHP imagick expose working WebP support. The standalone
+  `webp` CLI package is optional downstream tooling.
+- ImageMagick is configured with `--without-x`; this headless server image does
+  not bundle `libxt6` or promise the X11-only display commands.
 - `install-php-extensions` is copied from
   the installer image configured in `config/php-branches.conf` into
   `/usr/local/bin`.
@@ -97,6 +103,8 @@ Useful verification commands after a build:
 docker run --rm php-apache:local php -m | grep -E '^(gmp|imagick)$'
 docker run --rm php-apache:local php --ri imagick
 docker run --rm php-apache:local sh -lc 'ldd "$(php-config --extension-dir)/imagick.so" | grep -i magick'
+docker run --rm php-apache:local sh -lc 'magick -size 2x2 xc:white /tmp/check.webp && magick identify /tmp/check.webp'
+docker run --rm php-apache:local php -r 'var_export(Imagick::queryFormats("WEBP"));'
 docker run --rm php-apache:local command -v install-php-extensions
 ```
 
@@ -108,6 +116,66 @@ updates. The Dockerfile removes `/usr/local/etc/php/conf.d/00-ioncube.ini` only
 when it points to a missing or unloadable ionCube loader, because that inherited
 configuration causes PHP startup warnings even though ionCube is not part of
 this image's maintained feature set.
+
+## Rootless Docker Bind Mounts
+
+Use one published image for both ordinary and rootless Docker environments.
+Rootless support is a runtime configuration, not a separate Dockerfile or image
+tag.
+
+A rootless Docker daemon runs containers in the invoking user's user namespace.
+Container UID `0` maps to the unprivileged user running that daemon. A nonzero
+container UID instead maps to a subordinate host UID, so setting
+`APPLICATION_UID`, `APPLICATION_GID`, or the Dockerfile build arguments to the
+host user's numeric IDs does not align bind-mount ownership in rootless mode.
+
+First confirm that the active daemon is rootless:
+
+```bash
+docker info --format '{{range .SecurityOptions}}{{println .}}{{end}}' \
+  | grep -F rootless
+```
+
+Then configure the service explicitly:
+
+```yaml
+services:
+  php:
+    image: 1allen/php-apache:8.5
+    user: "0:0"
+    environment:
+      CONTAINER_UID: "0"
+      SERVICE_PHPFPM_OPTS: "-R"
+    volumes:
+      - .:/app
+```
+
+`CONTAINER_UID=0` makes the inherited WebDevOps entrypoint configure the
+PHP-FPM pool for namespace UID `0`. PHP-FPM normally refuses that UID, so
+`SERVICE_PHPFPM_OPTS=-R` supplies its explicit allow-root option. The top-level
+`user: "0:0"` makes the intended namespace identity visible in the Compose
+configuration. PHP and commands executed in the service then create
+bind-mounted files as the host user that owns the rootless daemon.
+
+Do not use this mode with a rootful Docker daemon. In rootful mode these values
+run PHP-FPM as real container root and create root-owned files on host bind
+mounts. Keep the override in a rootless-specific Compose file or profile rather
+than in a portable default service definition.
+
+Verify the result against a disposable file in the mounted application path:
+
+```bash
+docker compose exec php php -r \
+  'file_put_contents("/app/.rootless-write-test", "ok\n");'
+test "$(stat -c %u .rootless-write-test)" -eq "$(id -u)"
+rm .rootless-write-test
+```
+
+If policy also requires PHP-FPM to have a nonzero UID inside the container,
+stock rootless Docker cannot guarantee that newly created bind-mounted files
+are owned by the daemon's host user. Use a runtime with keep-ID or idmapped
+mount support, or manage host filesystem ACLs; that ownership mapping cannot be
+fixed by publishing another variant of this image.
 
 ## Updating Upstreams
 
@@ -222,6 +290,50 @@ RUN install-php-extensions protobuf-4.30.2 grpc-1.72.0 redis-6.2.0
 
 Use the installer for extension dependencies, but keep application packages in
 the downstream Dockerfile so this base image stays broadly reusable.
+
+Install optional operating-system tools by application capability rather than
+growing the shared base image:
+
+- image optimization: `jpegoptim`, `webp`;
+- media processing: `ffmpeg`;
+- database administration: `mariadb-client`.
+
+For example, an application that needs all of the legacy tools can preserve the
+old production behavior downstream:
+
+```Dockerfile
+FROM 1allen/php-apache:8.5
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        jpegoptim webp ffmpeg mariadb-client \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Delete packages the application does not call. Installing `webp` here adds its
+CLI tools; the base image already carries the runtime libraries required by its
+tested ImageMagick/imagick WebP contract.
+
+## Workflow Change Gate
+
+Use the existing project interface before proposing maintenance or release
+machinery:
+
+| Outcome | Maintained interface |
+| --- | --- |
+| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply]` |
+| Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
+| Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
+| Scan a published image | `bash scripts/ci/trivy_scan.sh` |
+| Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
+
+Before changing external state, preview the exact commands and their branch,
+image, tag, or issue effects against the Branch Flow below. Do not replace this
+flow with parallel rollout pull requests, temporary rollout branches, duplicate
+scripts, or new orchestration unless the maintained interface cannot satisfy a
+specific requirement. Document the exact gap and obtain explicit approval
+before designing an alternative. If the documented behavior is unclear, inspect
+the implementation and ask; do not import a generic workflow.
 
 ## Branch Flow
 
