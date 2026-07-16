@@ -37,6 +37,15 @@ The maintained PHP lines are:
 PHP 7.3 and 7.4 images are deprecated and frozen. New projects should use a
 supported PHP 8 image.
 
+Compare current Docker Hub compressed sizes with the recorded pre-cleanup
+baseline:
+
+```bash
+bash scripts/image_metrics.sh
+```
+
+See `docs/maintenance.md` for metric semantics and machine-readable output.
+
 ## Quick Start
 
 Mount an application at `/app`, expose Apache on port 8080, and set the web
