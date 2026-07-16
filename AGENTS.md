@@ -31,6 +31,27 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   pathing.
 - Keep Docker build and publish behavior in `scripts/ci/docker_build.sh`; CI
   YAML should be a thin provider adapter. Semaphore is current, not permanent.
+- Treat the documented maintenance interfaces as authoritative before designing
+  any workflow. Map the requested outcome to `scripts/repo_sync.sh`,
+  `scripts/ci/docker_build.sh`, `scripts/ci/trivy_scan.sh`,
+  `scripts/tags_update.sh`, and the branch flow in `docs/maintenance.md` first.
+- Do not propose parallel rollout PRs, temporary rollout branches, replacement
+  scripts, or new orchestration unless an exact requirement unsupported by the
+  existing interfaces has been demonstrated. Document that gap and obtain
+  explicit approval before designing an alternative; generic best practices do
+  not override this repository's instructions.
+- Before merge, propagation, publish, tag movement, or issue-state changes,
+  preview the exact commands and effects and compare them with the maintenance
+  runbook. If the documented route or its effect is unclear, stop and ask
+  instead of inventing a workflow.
+- Keep provider-ref classification in `scripts/lib/release_ref.sh`, maintained
+  Dockerfile invariants in `scripts/lib/image_contract.sh`, and temporary Git
+  worktree mechanics in `scripts/lib/git_worktree.sh`.
+- Keep WebP support in the base image and verify it through ImageMagick and PHP
+  imagick. Keep `jpegoptim`, the `webp` CLI, `ffmpeg`, and `mariadb-client` as
+  documented downstream options rather than bundled base-image tools.
+- Keep the image headless with ImageMagick `--without-x`; do not restore
+  `libxt6` unless X11 operations become an explicit maintained feature.
 - PR branches and `latest` are build-only. Docker Hub publishing is limited to
   `phpXX` branches and version-like git tags.
 
