@@ -1,37 +1,144 @@
 # php-apache
 
-Custom `webdevops/php-apache` images with a newer ImageMagick build, bundled
-PECL `imagick`, WebP support, and the mlocati `install-php-extensions` helper
-kept inside the final image for downstream customization.
+Maintained Apache and PHP container images based on
+[`webdevops/php-apache`](https://hub.docker.com/r/webdevops/php-apache), with a
+newer pinned ImageMagick build and PECL `imagick` linked against it.
 
-`latest` is the integration branch for shared maintenance. Published PHP images
-live on `phpXX` branches and version-like git tags.
+The images are intended for PHP applications that need dependable image
+processing and a straightforward way to add application-specific PHP
+extensions and command-line tools downstream.
 
-## Documentation
+## Features
 
-- [docs/README.md](docs/README.md): documentation map, sources of truth, and glossary
-- [docs/maintenance.md](docs/maintenance.md): update, branch propagation, and release runbook
-- [docs/decisions.md](docs/decisions.md): durable project decisions
-- [AGENTS.md](AGENTS.md): agent-specific guardrails
+- Apache with PHP-FPM from the upstream WebDevOps image
+- custom ImageMagick under `/usr/local`, including WebP support
+- bundled PECL `imagick`, compiled against the custom ImageMagick build
+- bundled `gmp` PHP extension
+- tested WebP support without requiring the standalone `webp` CLI
+- `install-php-extensions` available for downstream image customization
+- published, PHP-minor-specific image tags rather than a floating development
+  tag
 
-## Quick Commands
+## Supported Images
+
+Published images are available from
+[`1allen/php-apache` on Docker Hub](https://hub.docker.com/r/1allen/php-apache).
+The maintained PHP lines are:
+
+| PHP | Image |
+| --- | --- |
+| 8.0 | `1allen/php-apache:8.0` |
+| 8.1 | `1allen/php-apache:8.1` |
+| 8.2 | `1allen/php-apache:8.2` |
+| 8.3 | `1allen/php-apache:8.3` |
+| 8.4 | `1allen/php-apache:8.4` |
+| 8.5 | `1allen/php-apache:8.5` |
+
+PHP 7.3 and 7.4 images are deprecated and frozen. New projects should use a
+supported PHP 8 image.
+
+## Quick Start
+
+Mount an application at `/app`, expose Apache on port 8080, and set the web
+document root explicitly:
 
 ```bash
-bash scripts/repo_sync.sh status
+docker run --rm \
+  --publish 8080:80 \
+  --env WEB_DOCUMENT_ROOT=/app \
+  --volume "$PWD:/app" \
+  1allen/php-apache:8.5
+```
+
+Then open `http://localhost:8080`. Adapt the image tag, mount path, and document
+root to the application.
+
+## Downstream Customization
+
+The final image includes the mlocati extension installer. Combine PHP extensions
+and only the operating-system tools the application uses in one downstream
+layer:
+
+```Dockerfile
+FROM 1allen/php-apache:8.5
+
+RUN set -eux; \
+    install-php-extensions protobuf grpc redis; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        jpegoptim \
+        webp \
+        ffmpeg \
+        mariadb-client; \
+    rm -rf /var/lib/apt/lists/*
+```
+
+`jpegoptim` and `webp` are image-optimization CLIs, `ffmpeg` is media tooling,
+and `mariadb-client` provides database administration commands. Remove
+unneeded lines from the example: fewer runtime packages have a larger impact
+than compressing commands into one layer. `--no-install-recommends` avoids
+optional dependency trees, and deleting `/var/lib/apt/lists` in the same layer
+keeps package indexes out of the resulting image.
+
+Pin extension versions when reproducible builds require them. The bundled
+`imagick` extension should remain unchanged because it is intentionally compiled
+against this image's custom ImageMagick. WebP support in bundled
+ImageMagick/imagick is part of the base contract and does not depend on the
+optional `webp` CLI.
+
+## Rootless Docker
+
+Use the same image with an explicit runtime override when bind-mounted files
+must remain owned by the user running a rootless Docker daemon:
+
+```yaml
+services:
+  php:
+    image: 1allen/php-apache:8.5
+    user: "0:0"
+    environment:
+      CONTAINER_UID: "0"
+      SERVICE_PHPFPM_OPTS: "-R"
+      WEB_DOCUMENT_ROOT: /app
+    volumes:
+      - .:/app
+```
+
+This mode is only for a verified rootless Docker daemon. Do not copy it into a
+rootful Docker configuration. See
+[Rootless Docker bind mounts](docs/maintenance.md#rootless-docker-bind-mounts)
+for the ownership model, safety warning, and verification steps.
+
+## Repository Development
+
+The `latest` branch is the integration branch for shared maintenance work; it
+is not the recommended consumer image tag. Published PHP images come from the
+supported `phpXX` branches and version-like git tags.
+
+Run the required checks for a change on `latest`:
+
+```bash
 bash tests/repo_sync_test.sh
 bash scripts/repo_sync.sh verify-image-tooling latest
 ```
 
-After Dockerfile behavior has been propagated to supported PHP branches:
+After equivalent Dockerfile behavior has been applied to all supported PHP
+branches, verify the complete supported set:
 
 ```bash
 bash scripts/repo_sync.sh verify-image-tooling
 ```
 
-## Downstream Extension Installs
+Branch propagation and publishing have additional guardrails. Follow the
+maintenance runbook rather than copying CI or synchronization commands into a
+new workflow.
 
-```Dockerfile
-FROM 1allen/php-apache:8.5
+## Project Documentation
 
-RUN install-php-extensions protobuf grpc redis
-```
+- [Documentation map](docs/README.md): sources of truth and project glossary
+- [Maintenance runbook](docs/maintenance.md): updates, branch propagation,
+  image verification, and releases
+- [Project decisions](docs/decisions.md): rationale for durable maintenance
+  choices
+- [Agent instructions](AGENTS.md): repository-specific guardrails for coding
+  agents and automated maintainers
