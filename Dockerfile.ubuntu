@@ -10,6 +10,12 @@ ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN set -eux; \
+    printf '%s\n' \
+        'deb http://archive.debian.org/debian buster main' \
+        'deb http://archive.debian.org/debian-security buster/updates main' \
+        > /etc/apt/sources.list; \
+    printf '%s\n' 'Acquire::Check-Valid-Until "false";' \
+        > /etc/apt/apt.conf.d/99archive-valid-until; \
     apt-get update; \
     apt-get install -y --no-install-recommends --no-install-suggests \
         ca-certificates \
