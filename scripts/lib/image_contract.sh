@@ -25,6 +25,7 @@ image_contract_missing_invariants() {
     local marker
     local package_name
     local package_line
+    local webp_runtime_package
     # shellcheck disable=SC2016
     local required_markers=(
         'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
@@ -40,7 +41,6 @@ image_contract_missing_invariants() {
         'imagick.tgz | sha256sum -c -'
         'https://github.com/ImageMagick/ImageMagick/archive/${IMAGEMAGICK_VERSION}.tar.gz'
         'https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz'
-        'libwebp7'
         'libwebpdemux2'
         'libwebpmux3'
         'magick -size 2x2 xc:white /tmp/webp-contract.webp'
@@ -54,6 +54,12 @@ image_contract_missing_invariants() {
     for marker in "${required_markers[@]}"; do
         [[ "$dockerfile_content" == *"$marker"* ]] || echo "$marker"
     done
+
+    for webp_runtime_package in libwebp7 libwebp6; do
+        [[ "$dockerfile_content" == *"        $webp_runtime_package \\"* ]] && break
+        webp_runtime_package=""
+    done
+    [[ -n "$webp_runtime_package" ]] || echo "WebP runtime package: libwebp7 or libwebp6"
 
     for package_name in jpegoptim mariadb-client webp ffmpeg libxt6; do
         package_line="        $package_name \\"
