@@ -37,6 +37,19 @@ Keep the scan policy in `scripts/ci/trivy_scan.sh` so the behavior follows the
 image publish path across CI providers. Semaphore may expose it as a separate
 post-publish block, but the provider adapter should not own the scan policy.
 
+## Measure Registry-Compressed Image Size
+
+Image cleanup is measured with Docker Hub's compressed linux/amd64 manifest
+size, not the local Docker virtual size. The registry metric is reproducible
+without pulling every image and matches the bytes consumers transfer, while
+local size can vary with Docker's storage driver and shared layers.
+
+Keep reporting read-only and separate from build, publish, and scan policy.
+`scripts/image_metrics.sh` reads current Docker Hub metadata and compares it
+with the immutable pre-cleanup snapshot in
+`config/image-size-baseline.tsv`. A release can record the report in its issue
+without making size reduction a publish gate.
+
 ## Stage ImageMagick With DESTDIR
 
 ImageMagick should be configured with its runtime prefix as `/usr/local` and
@@ -44,6 +57,11 @@ installed into a temporary staging root with `make install DESTDIR=/tmp/imgck`.
 This keeps copied artifact paths aligned with their runtime location while still
 allowing the final image to copy only the staged `/usr/local` tree from the
 builder stage.
+
+The builder's distribution must remain compatible with the final branch base
+for dynamically linked libraries outside that staged tree. Older image lines
+may pin a matching builder distribution; in particular, `php80` pairs its
+Buster runtime with `spritsail/debian-builder:buster`.
 
 ## Keep The Base Image Focused
 

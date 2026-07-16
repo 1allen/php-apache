@@ -21,7 +21,8 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   critical emergency fix.
 - `Dockerfile.ubuntu` is the maintained image path. `Dockerfile.ubuntu` is not a
   shared file; apply equivalent Dockerfile behavior to supported `phpXX`
-  branches intentionally while preserving each branch's base PHP minor.
+  branches intentionally while preserving each branch's base PHP minor and
+  builder/runtime ABI compatibility pins.
 - `imagick` is a bundled feature. Keep the explicit pinned PECL source build
   unless you have verified that another installer path still ships `imagick` by
   default and links against custom ImageMagick under `/usr/local`.
@@ -34,7 +35,8 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
 - Treat the documented maintenance interfaces as authoritative before designing
   any workflow. Map the requested outcome to `scripts/repo_sync.sh`,
   `scripts/ci/docker_build.sh`, `scripts/ci/trivy_scan.sh`,
-  `scripts/tags_update.sh`, and the branch flow in `docs/maintenance.md` first.
+  `scripts/tags_update.sh`, `scripts/image_metrics.sh`, and the branch flow
+  in `docs/maintenance.md` first.
 - Do not propose parallel rollout PRs, temporary rollout branches, replacement
   scripts, or new orchestration unless an exact requirement unsupported by the
   existing interfaces has been demonstrated. Document that gap and obtain
@@ -52,6 +54,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   documented downstream options rather than bundled base-image tools.
 - Keep the image headless with ImageMagick `--without-x`; do not restore
   `libxt6` unless X11 operations become an explicit maintained feature.
+- Measure cleanup results with the Docker Hub linux/amd64 compressed size from
+  `scripts/image_metrics.sh`; do not compare local virtual image size with
+  registry-compressed bytes.
 - PR branches and `latest` are build-only. Docker Hub publishing is limited to
   `phpXX` branches and version-like git tags.
 
