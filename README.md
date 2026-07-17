@@ -121,8 +121,8 @@ for the ownership model, safety warning, and verification steps.
 ## Repository Development
 
 The `latest` branch is the integration branch for shared maintenance work; it
-is not the recommended consumer image tag. Published PHP images come from the
-supported `phpXX` branches and version-like git tags.
+is not a consumer image tag. PHP branches hold version-specific Dockerfiles but
+do not publish branch-named images. Published PHP images come only from version-like Git tags.
 
 Run the required checks for a change on `latest`:
 
