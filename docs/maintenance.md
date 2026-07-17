@@ -63,6 +63,10 @@ As of 2026-07-16:
 - Semaphore does not pass Docker image artifacts between jobs and does not keep
   a dedicated writable registry cache. Published semver images provide the
   initial read-only inline cache without extra artifact storage.
+- Docker Hub retirement is available as the manual `clean up retired Docker
+  Hub tags` promotion on a successful `latest` workflow. It is never
+  auto-promoted and reuses the protected `dockerhub-1allen` secret only inside
+  Semaphore.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. Semaphore is the current CI adapter,
   not the long-term interface. New CI providers should map their native
@@ -340,7 +344,7 @@ machinery:
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
-| Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` |
+| Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual Semaphore promotion |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
 
 Before changing external state, preview the exact commands and their branch,
@@ -409,20 +413,31 @@ bash scripts/docker_hub_cleanup.sh
 
 The dry run lists retired tags that are present, version-like tags that will be
 preserved, and any other untouched tags. It does not authenticate or delete.
-After confirming the inventory, provide a Docker Hub PAT or organization access
-token through the environment and apply the cleanup:
+After confirming the inventory, use one of the two maintained apply adapters.
+If a Docker Hub PAT or organization access token is available locally, provide
+it through the environment:
 
 ```bash
 DOCKER_HUB_TOKEN=... bash scripts/docker_hub_cleanup.sh --apply
 bash scripts/image_metrics.sh
 ```
 
+If the credential is available only as Semaphore's protected
+`dockerhub-1allen` secret, open a successful `latest` workflow and manually run
+the `clean up retired Docker Hub tags` promotion. The promoted
+`.semaphore/cleanup.yml` pipeline refuses non-`latest` workflow sources, maps
+the protected publish credential to `DOCKER_HUB_TOKEN` only in the job
+environment, invokes the same `scripts/docker_hub_cleanup.sh --apply`
+interface, and prints the post-delete verification. The promotion has no
+`auto_promote` rule and must never be made automatic.
+
 Apply mode obtains a short-lived Docker Hub bearer token, deletes only `latest`
 and configured `phpXX` names that are currently present, then inventories the
 repository again and fails unless all retired names are absent. The script
 refuses to classify `X.Y` or `X.Y.Z` tags as deletion targets. This is a
 one-time external cleanup; tag-only CI publishing prevents those names from
-being recreated.
+being recreated. After either apply adapter succeeds, rerun the local dry run
+and `scripts/image_metrics.sh` to verify the final public state.
 
 ## Branch Flow
 
