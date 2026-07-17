@@ -168,6 +168,14 @@ phase while branch enumeration, atomicity, deletion policy, authentication,
 and verification remain local to the maintained scripts. They do not turn
 one-time registry retirement into an automatic CI side effect.
 
+When the only available Docker Hub credential is Semaphore's protected publish
+secret, expose cleanup as a manual Semaphore promotion from `latest`. The thin
+adapter may map the protected `DOCKER_PASSWORD` value to the cleanup script's
+provider-neutral `DOCKER_HUB_TOKEN` input, but deletion policy and verification
+remain in `scripts/docker_hub_cleanup.sh`. The promotion must have no
+`auto_promote` rule, must reject non-`latest` workflow sources, and must reuse
+the existing `dockerhub-1allen` secret without making it locally readable.
+
 ## Use Existing Maintenance Interfaces First
 
 Repository maintenance is not a blank-slate workflow-design exercise. The
