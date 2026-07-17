@@ -7,6 +7,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT_DIR/config/php-branches.conf"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/scripts/lib/release_ref.sh"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/image_contract.sh"
 
 DOCKERFILE_PATH="${DOCKERFILE_PATH:-Dockerfile.ubuntu}"
 BUILD_CONTEXT="${BUILD_CONTEXT:-.}"
@@ -67,7 +69,7 @@ write_build_metrics() {
 }
 
 case "$CI_DOCKER_MODE" in
-    build|build-publish)
+    build|build-publish|preflight)
         ;;
     *)
         die "Unknown CI_DOCKER_MODE: $CI_DOCKER_MODE"
@@ -75,6 +77,23 @@ case "$CI_DOCKER_MODE" in
 esac
 
 release_ref_resolve
+
+cd "$ROOT_DIR"
+
+if [[ "$CI_DOCKER_MODE" == "preflight" ]]; then
+    if [[ -n "$RELEASE_REF_TAG" && -z "$RELEASE_REF_PUBLISH_TAG" ]]; then
+        die "Refusing preflight for non-version tag: $RELEASE_REF_TAG."
+    fi
+    if [[ -z "$RELEASE_REF_TAG" && ! "$RELEASE_REF_BRANCH" =~ $PHP_BRANCH_PATTERN ]]; then
+        die "Refusing preflight for non-release branch: ${RELEASE_REF_BRANCH:-<unset>}."
+    fi
+
+    dockerfile_content="$(<"$DOCKERFILE_PATH")"
+    missing_invariants="$(image_contract_missing_invariants "$dockerfile_content" || true)"
+    [[ -z "$missing_invariants" ]] || die "Release source violates image contract:${missing_invariants//$'\n'/$'\n  - '}"
+    echo "Release source preflight passed: ${RELEASE_REF_TAG:-$RELEASE_REF_BRANCH}"
+    exit 0
+fi
 
 if [[ "$CI_DOCKER_MODE" == "build-publish" && "$RELEASE_REF_TYPE" == "pull-request" ]]; then
     die "Refusing to publish from pull-request ref."
@@ -84,10 +103,12 @@ if [[ -n "$RELEASE_REF_TAG" && -z "$RELEASE_REF_PUBLISH_TAG" && "$CI_DOCKER_MODE
     die "Refusing to publish non-version tag: $RELEASE_REF_TAG."
 fi
 
-cd "$ROOT_DIR"
+if [[ "$CI_DOCKER_MODE" == "build-publish" ]] && ! release_ref_is_publishable; then
+    die "Refusing to publish from non-version ref: ${RELEASE_REF_TAG:-${RELEASE_REF_BRANCH:-<unset>}}."
+fi
 
 if ! release_ref_requires_build; then
-    echo "Non-publish ref: skipping Docker build"
+    echo "Non-build ref: skipping Docker build"
     exit 0
 fi
 
@@ -96,9 +117,16 @@ cache_started_seconds=$SECONDS
 
 if release_ref_is_publishable; then
     add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$RELEASE_REF_PUBLISH_TAG"
+    minor_cache_tag="$(release_ref_version_to_minor "$RELEASE_REF_PUBLISH_TAG")"
+    if [[ "$minor_cache_tag" != "$RELEASE_REF_PUBLISH_TAG" ]]; then
+        add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$minor_cache_tag"
+    fi
+elif [[ "$RELEASE_REF_TYPE" == "pull-request" && "$RELEASE_REF_BRANCH" =~ $PHP_BRANCH_PATTERN ]]; then
+    add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$(release_ref_branch_to_version "$RELEASE_REF_BRANCH")"
+else
+    add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:$DEFAULT_BUILD_CACHE_TAG"
 fi
 
-add_cache_source "$DOCKER_USERNAME/$IMAGE_NAME:latest"
 add_cache_source "$BUILDER_IMAGE"
 cache_prepare_seconds=$((SECONDS - cache_started_seconds))
 

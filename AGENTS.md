@@ -57,8 +57,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
 - Measure cleanup results with the Docker Hub linux/amd64 compressed size from
   `scripts/image_metrics.sh`; do not compare local virtual image size with
   registry-compressed bytes.
-- PR branches and `latest` are build-only. Docker Hub publishing is limited to
-  `phpXX` branches and version-like git tags.
+- PR branches and `latest` are build-only. PHP branches are preflight-only and
+  must not build or publish branch-named images. Docker Hub publishing is
+  limited to version-like Git tags.
 
 ## Required Checks
 

@@ -3,13 +3,27 @@
 This file records durable project decisions. Keep details in the maintained
 source files named by `docs/README.md`; decisions explain why the rules exist.
 
-## Build Only From Latest
+## Publish Version Tags Once
 
 The `latest` branch is the integration branch for shared maintenance changes,
 not a consumer PHP version line. CI should build PR branches and `latest` to
-prove the image still builds, but Docker Hub publishing belongs to `phpXX`
-branches and version-like git tags so published image names stay tied to the
-project's branch and tag model.
+prove the maintained image still builds. PHP branches hold the version-specific
+Dockerfiles and receive a Docker-free image-contract preflight. They do not
+publish branch-named images. Version-like Git tags are the only Docker Hub
+publish refs.
+
+Each version tag builds exactly once in the protected publish pipeline, pushes
+only after the build succeeds, and then receives the advisory scan. The root
+pipeline performs only the release-source preflight for version tags, avoiding
+the previous build followed by an immediate rebuild. The build imports inline
+cache metadata from the previous same tag and, for a patch tag, its minor tag.
+PR and `latest` builds use the configured maintained minor tag as their cache
+source instead of an unmaintained `latest` image.
+
+Do not pass saved Docker images between CI jobs or create a dedicated writable
+cache until measured build timings demonstrate that the remaining compilation
+cost justifies the storage and credential overhead. Published semver images are
+both the consumer artifact and the initial read-only cache source.
 
 CI-provider-specific YAML should stay as a thin adapter. The stable interface is
 `scripts/ci/docker_build.sh` with normalized `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
@@ -30,8 +44,8 @@ ordinary branch-push workflows.
 
 Final image scanning belongs in a separate post-publish step while the project
 is still using advisory vulnerability scans. The scan should target the exact
-pushed Docker Hub ref for each `phpXX` branch or version-like tag and should not
-block publishing until the project deliberately promotes it to a gate.
+pushed version-like Docker Hub ref and should not block publishing until the
+project deliberately promotes it to a gate.
 
 Keep the scan policy in `scripts/ci/trivy_scan.sh` so the behavior follows the
 image publish path across CI providers. Semaphore may expose it as a separate
@@ -47,8 +61,10 @@ local size can vary with Docker's storage driver and shared layers.
 Keep reporting read-only and separate from build, publish, and scan policy.
 `scripts/image_metrics.sh` reads current Docker Hub metadata and compares it
 with the immutable pre-cleanup snapshot in
-`config/image-size-baseline.tsv`. A release can record the report in its issue
-without making size reduction a publish gate.
+`config/image-size-baseline.tsv`. The current side uses consumer `X.Y` tags;
+the preserved baseline rows retain their historical `phpXX` names. A release
+can record the report in its issue without making size reduction a publish
+gate.
 
 ## Join Build And Image Metrics At A File Seam
 
@@ -56,11 +72,11 @@ Build timing and registry size come from different moments in the release job:
 the Docker build knows elapsed cache-preparation, build, and push time, while
 Docker Hub knows the final compressed size and digest only after publication.
 Join them through a small provider-neutral TSV file rather than coupling Docker
-Hub queries into `scripts/ci/docker_build.sh` or storing a Docker image artifact.
+Hub queries into `scripts/ci/docker_build.sh` or adding CI artifact storage.
 
 `scripts/ci/docker_build.sh` optionally writes the timing record after a
 successful push. `scripts/image_metrics.sh --build-metrics FILE` consumes that
-record, infers its image tags, and joins it with registry metrics. Semaphore
+record, infers its version tags, and joins it with registry metrics. Semaphore
 only selects the temporary path and invokes both maintained interfaces in the
 same job. Other CI providers can use the same file interface.
 
