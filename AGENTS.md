@@ -35,8 +35,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
 - Treat the documented maintenance interfaces as authoritative before designing
   any workflow. Map the requested outcome to `scripts/repo_sync.sh`,
   `scripts/ci/docker_build.sh`, `scripts/ci/trivy_scan.sh`,
-  `scripts/tags_update.sh`, `scripts/image_metrics.sh`, and the branch flow
-  in `docs/maintenance.md` first.
+  `scripts/tags_update.sh`, `scripts/image_metrics.sh`,
+  `scripts/docker_hub_cleanup.sh`, and the branch flow in
+  `docs/maintenance.md` first.
 - Do not propose parallel rollout PRs, temporary rollout branches, replacement
   scripts, or new orchestration unless an exact requirement unsupported by the
   existing interfaces has been demonstrated. Document that gap and obtain
