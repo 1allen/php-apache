@@ -19,7 +19,7 @@ Related project decisions are recorded in `docs/decisions.md`.
 
 ## Current Image Decisions
 
-As of 2026-06-28:
+As of 2026-07-16:
 
 - `webdevops/php-apache:8.5` is the current Ubuntu base used by
   `Dockerfile.ubuntu`.
@@ -35,14 +35,16 @@ As of 2026-06-28:
 - `install-php-extensions` is copied from
   the installer image configured in `config/php-branches.conf` into
   `/usr/local/bin`.
-- CI enables BuildKit inline cache metadata and uses both the target image tag
-  and `latest` as cache sources. PR branches and `latest` are build-only;
-  Docker Hub publishing is reserved for `phpXX` branches and git tags.
-- Semaphore's root pipeline has one visible build block for PRs, `latest`, and
-  publishable refs. Publishable `phpXX` branches and version-like git tags
-  auto-promote to `.semaphore/publish.yml`, which has explicit `publish image`
-  and `scan published image` blocks. This keeps PR workflows to one visible
-  build block while preserving a structured publish flow for release refs.
+- CI enables BuildKit inline cache metadata. A version-tag build uses its
+  previous same tag as the primary cache source; a patch tag also falls back to
+  its `X.Y` tag. PR and `latest` builds use `DEFAULT_BUILD_CACHE_TAG`. CI does
+  not use or publish a floating `latest` cache image.
+- PRs and `latest` run the full build-only smoke check. PHP branch pushes and
+  version tags run a Docker-free release-source preflight. Only a passed
+  version-like Git tag auto-promotes to `.semaphore/publish.yml`, where one
+  `build-publish` execution is followed by `scan published image`.
+- Version-like Git tags are the only Docker Hub publish refs. PHP branch names
+  remain repository source lines and must not become Docker image tags.
 - Semaphore project triggers still control whether GitHub receives both
   `ci/semaphoreci/pr` and `ci/semaphoreci/push` statuses for a PR branch
   commit. YAML `run.when` can skip blocks, but it cannot prevent Semaphore from
@@ -50,13 +52,17 @@ As of 2026-06-28:
   requests enabled, allow branch workflows only for `latest` and supported
   `phpXX` branches, and allow tag workflows only for version-like tags.
 - After a successful publish, the promoted publish pipeline runs
+  `scripts/image_metrics.sh --build-metrics` in the publish job to report cache
+  preparation, build, publish, and total seconds together with the pushed
+  image's compressed size, baseline savings, digest, and cache sources. It then
+  runs
   `scripts/ci/trivy_scan.sh` against the final pushed image ref. This scan is
   advisory and non-blocking for now; failed scans should be reviewed but should
   not fail publishing until the project intentionally promotes the scan to a
   pre-publish or publish gate.
-- Semaphore does not pass Docker image artifacts between jobs. A saved Docker
-  image is large, has awkward ref-specific naming, and adds artifact storage
-  cost without a clear win for this small pipeline.
+- Semaphore does not pass Docker image artifacts between jobs and does not keep
+  a dedicated writable registry cache. Published semver images provide the
+  initial read-only inline cache without extra artifact storage.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. Semaphore is the current CI adapter,
   not the long-term interface. New CI providers should map their native
@@ -237,8 +243,9 @@ To exercise the same build decision logic used by CI, run the script directly:
 
 ```bash
 CI_GIT_BRANCH=latest bash scripts/ci/docker_build.sh
-CI_GIT_BRANCH=php85 bash scripts/ci/docker_build.sh
-CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
+CI_GIT_BRANCH=php85 CI_DOCKER_MODE=preflight bash scripts/ci/docker_build.sh
+CI_GIT_TAG=8.5 CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish \
+  DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
 ```
 
 The promoted publish pipeline runs `scripts/ci/trivy_scan.sh` as a separate
@@ -349,13 +356,31 @@ Use the registry-compressed linux/amd64 size to evaluate base-image cleanup:
 
 ```bash
 bash scripts/image_metrics.sh
-bash scripts/image_metrics.sh --format tsv php80 php85
+bash scripts/image_metrics.sh --format tsv 8.0 8.5
 ```
 
-The default report compares supported `phpXX` tags with the immutable
-pre-cleanup Docker Hub snapshot in `config/image-size-baseline.tsv`. The
-snapshot was queried on 2026-07-16 before PR #6's supported branch tags were
-republished; each row preserves the API's prior digest, compressed size, and
+The protected publish job records provider-neutral build timings and joins them
+to the just-published tag in the same job:
+
+```bash
+CI_BUILD_METRICS_FILE=/tmp/php-apache-build-metrics.tsv \
+  CI_GIT_TAG=8.5 CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish \
+  DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
+bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv
+```
+
+The timing record includes cache preparation, Docker build, publish, and total
+wall-clock seconds plus the cache refs supplied to BuildKit. Those refs are
+cache candidates, not a measured cache-hit rate. The default report remains
+size-only when `--build-metrics` is omitted. The post-push combined report is
+non-blocking: a Docker Hub reporting delay or outage emits a warning without
+changing the completed publication result or preventing the scan.
+
+The default report reads supported consumer `X.Y` tags and compares each PHP
+line with the immutable pre-cleanup Docker Hub snapshot in
+`config/image-size-baseline.tsv`. The snapshot was queried on 2026-07-16 before
+PR #6's branch tags were republished, so its historical row keys remain
+`phpXX`. Each row preserves the API's prior digest, compressed size, and
 `last_updated` value. Positive `Saved` values mean the published image became
 smaller. The TSV format emits exact bytes, percentages, current and baseline
 digests, and the baseline tag timestamp for release records or further
@@ -365,6 +390,29 @@ This is a read-only observation interface. It does not build, publish, retag,
 pull, or scan images, and size changes are not a release gate. Docker Hub's
 compressed size is intentionally different from `docker images` virtual size;
 do not mix the two metrics in one comparison.
+
+### Legacy Docker Tag Cleanup
+
+The branch-named Docker tags `php73`, `php74`, and `php80` through `php85`,
+together with the floating `latest` tag, predate the tag-only publishing policy.
+They are not consumer interfaces. After the version-tag rollout has succeeded
+and `scripts/image_metrics.sh` can read every supported `X.Y` image, remove
+those legacy tags from Docker Hub.
+
+Before deletion, read back the exact inventory and confirm that the deletion
+set contains no version-like tag:
+
+```bash
+curl -fsSL \
+  'https://hub.docker.com/v2/namespaces/1allen/repositories/php-apache/tags?page_size=100' \
+  | jq -r '.results[] | [.name, .digest, .last_updated] | @tsv'
+```
+
+Tag deletion is a one-time external cleanup, not a build or release interface.
+Use Docker Hub Image Management or the authenticated Docker Hub API v2
+`DELETE /v2/namespaces/1allen/repositories/php-apache/tags/{tag}` endpoint.
+Delete only the names listed above, then repeat the inventory request and run
+`bash scripts/image_metrics.sh`. Do not delete `X.Y` or `X.Y.Z` tags.
 
 ## Branch Flow
 
@@ -416,17 +464,19 @@ do not mix the two metrics in one comparison.
    bash scripts/repo_sync.sh sync-shared --apply php73 php74
    ```
 
-7. Push the updated PHP branches so Semaphore builds and publishes
-   branch-specific image tags.
-8. Preview and apply Docker tag updates when users consume semver image tags
-   such as `1allen/php-apache:8.2`:
+7. Push the updated PHP branches. Semaphore runs the release-source preflight
+   but does not build or publish Docker images for branch refs.
+8. Preview and apply Git tag updates for consumer images such as
+   `1allen/php-apache:8.2`:
 
    ```bash
    bash scripts/tags_update.sh
    bash scripts/tags_update.sh --apply
    ```
 
-   This updates supported PHP tags only. Deprecated PHP 7 tags are intentionally
+   Each pushed version tag runs one cached build in the protected publish
+   pipeline, publishes that version-like Docker tag, and then runs the advisory
+   scan. This updates supported PHP tags only. Deprecated PHP 7 tags are intentionally
    left where they are unless you name those branches explicitly for a critical
    emergency fix:
 
@@ -465,8 +515,10 @@ merge the PR into `latest`, update the local `latest` branch, and run
 `bash scripts/repo_sync.sh sync-shared --apply` so the shared-file commits are
 created from the merged source branch. Then push only the supported `phpXX`
 branches that carry the branch-local Dockerfile commits plus the shared-file
-sync commits; Semaphore publishes those branch-specific image tags. Leave
-`php73` and `php74` untouched unless the change is a critical emergency fix.
+sync commits; Semaphore performs preflight without building or publishing.
+After those checks pass, use `scripts/tags_update.sh` to move the supported
+version tags and trigger one publish build per version. Leave `php73` and
+`php74` untouched unless the change is a critical emergency fix.
 
 For the final pre-push gate after branch-local Dockerfile commits and shared
 sync commits exist, run:
