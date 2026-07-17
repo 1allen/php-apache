@@ -335,11 +335,12 @@ machinery:
 
 | Outcome | Maintained interface |
 | --- | --- |
-| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply]` |
+| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply\|--push]` |
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
+| Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
 
 Before changing external state, preview the exact commands and their branch,
@@ -399,20 +400,29 @@ They are not consumer interfaces. After the version-tag rollout has succeeded
 and `scripts/image_metrics.sh` can read every supported `X.Y` image, remove
 those legacy tags from Docker Hub.
 
-Before deletion, read back the exact inventory and confirm that the deletion
-set contains no version-like tag:
+Use the maintained cleanup interface to read back the exact inventory and
+preview its policy-derived deletion set:
 
 ```bash
-curl -fsSL \
-  'https://hub.docker.com/v2/namespaces/1allen/repositories/php-apache/tags?page_size=100' \
-  | jq -r '.results[] | [.name, .digest, .last_updated] | @tsv'
+bash scripts/docker_hub_cleanup.sh
 ```
 
-Tag deletion is a one-time external cleanup, not a build or release interface.
-Use Docker Hub Image Management or the authenticated Docker Hub API v2
-`DELETE /v2/namespaces/1allen/repositories/php-apache/tags/{tag}` endpoint.
-Delete only the names listed above, then repeat the inventory request and run
-`bash scripts/image_metrics.sh`. Do not delete `X.Y` or `X.Y.Z` tags.
+The dry run lists retired tags that are present, version-like tags that will be
+preserved, and any other untouched tags. It does not authenticate or delete.
+After confirming the inventory, provide a Docker Hub PAT or organization access
+token through the environment and apply the cleanup:
+
+```bash
+DOCKER_HUB_TOKEN=... bash scripts/docker_hub_cleanup.sh --apply
+bash scripts/image_metrics.sh
+```
+
+Apply mode obtains a short-lived Docker Hub bearer token, deletes only `latest`
+and configured `phpXX` names that are currently present, then inventories the
+repository again and fails unless all retired names are absent. The script
+refuses to classify `X.Y` or `X.Y.Z` tags as deletion targets. This is a
+one-time external cleanup; tag-only CI publishing prevents those names from
+being recreated.
 
 ## Branch Flow
 
@@ -464,8 +474,19 @@ Delete only the names listed above, then repeat the inventory request and run
    bash scripts/repo_sync.sh sync-shared --apply php73 php74
    ```
 
-7. Push the updated PHP branches. Semaphore runs the release-source preflight
-   but does not build or publish Docker images for branch refs.
+7. Run the required final gate, then let the synchronization interface verify
+   that no shared-file drift remains and atomically push the complete target
+   branch set:
+
+   ```bash
+   bash tests/repo_sync_test.sh
+   bash scripts/repo_sync.sh verify-image-tooling
+   bash scripts/repo_sync.sh sync-shared --push
+   ```
+
+   A missing, divergent, or unsynchronized branch fails the push instead of
+   leaving a partial rollout. Semaphore runs the release-source preflight but
+   does not build or publish Docker images for branch refs.
 8. Preview and apply Git tag updates for consumer images such as
    `1allen/php-apache:8.2`:
 
@@ -513,14 +534,16 @@ Open a PR against `latest` first for shared-file review. Semaphore builds the
 PR and the eventual `latest` merge without publishing images. After review,
 merge the PR into `latest`, update the local `latest` branch, and run
 `bash scripts/repo_sync.sh sync-shared --apply` so the shared-file commits are
-created from the merged source branch. Then push only the supported `phpXX`
-branches that carry the branch-local Dockerfile commits plus the shared-file
-sync commits; Semaphore performs preflight without building or publishing.
-After those checks pass, use `scripts/tags_update.sh` to move the supported
-version tags and trigger one publish build per version. Leave `php73` and
-`php74` untouched unless the change is a critical emergency fix.
+created from the merged source branch. After the required checks pass, run
+`bash scripts/repo_sync.sh sync-shared --push`; it verifies synchronization and
+atomically pushes only the selected `phpXX` branches carrying branch-local
+Dockerfile commits plus shared-file sync commits. Semaphore performs preflight
+without building or publishing. After those checks pass, use
+`scripts/tags_update.sh` to move the supported version tags and trigger one
+publish build per version. Leave `php73` and `php74` untouched unless the change
+is a critical emergency fix.
 
-For the final pre-push gate after branch-local Dockerfile commits and shared
+For a standalone final gate after branch-local Dockerfile commits and shared
 sync commits exist, run:
 
 ```bash
