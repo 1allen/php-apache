@@ -50,6 +50,10 @@ As of 2026-06-28:
   requests enabled, allow branch workflows only for `latest` and supported
   `phpXX` branches, and allow tag workflows only for version-like tags.
 - After a successful publish, the promoted publish pipeline runs
+  `scripts/image_metrics.sh --build-metrics` in the publish job to report cache
+  preparation, build, publish, and total seconds together with the pushed
+  image's compressed size, baseline savings, digest, and cache sources. It then
+  runs
   `scripts/ci/trivy_scan.sh` against the final pushed image ref. This scan is
   advisory and non-blocking for now; failed scans should be reviewed but should
   not fail publishing until the project intentionally promotes the scan to a
@@ -351,6 +355,23 @@ Use the registry-compressed linux/amd64 size to evaluate base-image cleanup:
 bash scripts/image_metrics.sh
 bash scripts/image_metrics.sh --format tsv php80 php85
 ```
+
+The protected publish job records provider-neutral build timings and joins them
+to the just-published tag in the same job:
+
+```bash
+CI_BUILD_METRICS_FILE=/tmp/php-apache-build-metrics.tsv \
+  CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish \
+  DOCKER_PASSWORD=... bash scripts/ci/docker_build.sh
+bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv
+```
+
+The timing record includes cache preparation, Docker build, publish, and total
+wall-clock seconds plus the cache refs supplied to BuildKit. Those refs are
+cache candidates, not a measured cache-hit rate. The default report remains
+size-only when `--build-metrics` is omitted. The post-push combined report is
+non-blocking: a Docker Hub reporting delay or outage emits a warning without
+changing the completed publication result or preventing the scan.
 
 The default report compares supported `phpXX` tags with the immutable
 pre-cleanup Docker Hub snapshot in `config/image-size-baseline.tsv`. The

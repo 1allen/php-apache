@@ -50,6 +50,30 @@ with the immutable pre-cleanup snapshot in
 `config/image-size-baseline.tsv`. A release can record the report in its issue
 without making size reduction a publish gate.
 
+## Join Build And Image Metrics At A File Seam
+
+Build timing and registry size come from different moments in the release job:
+the Docker build knows elapsed cache-preparation, build, and push time, while
+Docker Hub knows the final compressed size and digest only after publication.
+Join them through a small provider-neutral TSV file rather than coupling Docker
+Hub queries into `scripts/ci/docker_build.sh` or storing a Docker image artifact.
+
+`scripts/ci/docker_build.sh` optionally writes the timing record after a
+successful push. `scripts/image_metrics.sh --build-metrics FILE` consumes that
+record, infers its image tags, and joins it with registry metrics. Semaphore
+only selects the temporary path and invokes both maintained interfaces in the
+same job. Other CI providers can use the same file interface.
+
+The report is non-blocking after a successful push. Registry reporting failures
+must remain visible as warnings, but must not turn an already-published image
+into a failed release or prevent its advisory security scan.
+
+Report cache preparation, build, publish, and total wall-clock seconds together
+with compressed bytes, baseline savings, digest, and attempted cache sources.
+Do not label attempted sources as cache hits. Add hit-rate reporting only when
+the builder exposes a stable machine-readable signal that does not require
+parsing presentation-oriented logs.
+
 ## Stage ImageMagick With DESTDIR
 
 ImageMagick should be configured with its runtime prefix as `/usr/local` and
