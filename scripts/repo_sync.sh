@@ -18,7 +18,7 @@ usage() {
     cat <<'EOF'
 Usage:
   bash scripts/repo_sync.sh status
-  bash scripts/repo_sync.sh sync-shared [--apply] [branch...]
+  bash scripts/repo_sync.sh sync-shared [--apply|--push] [branch...]
   bash scripts/repo_sync.sh verify-image-tooling [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
@@ -28,7 +28,8 @@ Commands:
   sync-shared        Sync shared files from the source branch into local PHP branches.
                      Dry-run by default. Targets supported branches only unless
                      explicit branches are provided.
-                     Use --apply to create branch-local commits.
+                     Use --apply to create branch-local commits. After required
+                     checks, use --push to verify sync and atomically push them.
   verify-image-tooling
                      Check that supported branch Dockerfiles include the image
                      tooling expected by downstream custom images.
@@ -192,8 +193,10 @@ status_command() {
 
 sync_shared_command() {
     local apply=0
+    local push=0
     local message="chore: sync shared repo files from ${BOOTSTRAP_SOURCE_BRANCH}"
     local target_branches=()
+    local push_branches=()
     local source_worktree=""
     local branch
     local file
@@ -205,6 +208,9 @@ sync_shared_command() {
         case "$1" in
             --apply)
                 apply=1
+                ;;
+            --push)
+                push=1
                 ;;
             -*)
                 die "Unknown sync-shared option: $1"
@@ -220,6 +226,10 @@ sync_shared_command() {
         target_branches+=("${SUPPORTED_PHP_BRANCHES[@]}")
     fi
 
+    if [[ $push -eq 1 && $apply -eq 1 ]]; then
+        die "--apply and --push are separate gated phases."
+    fi
+
     git_worktree_transaction_begin "$ROOT_DIR"
     git_worktree_transaction_add source "$BOOTSTRAP_SOURCE_BRANCH" detached
     source_worktree="$GIT_WORKTREE_PATH"
@@ -227,17 +237,23 @@ sync_shared_command() {
     echo "Source branch: $BOOTSTRAP_SOURCE_BRANCH"
     print_section "Target branches:" "${target_branches[@]}"
 
-    if [[ $apply -eq 1 ]]; then
-        git_worktree_transaction_require_clean || die "Working tree must be clean before using --apply."
-    else
+    if [[ $apply -eq 1 || $push -eq 1 ]]; then
+        git_worktree_transaction_require_clean || die "Working tree must be clean before using --apply or --push."
+    fi
+
+    if [[ $push -eq 1 ]]; then
+        echo "Push mode: shared files must already be synchronized."
+    elif [[ $apply -eq 0 ]]; then
         echo "Dry run: no branch commits will be created."
     fi
 
     for branch in "${target_branches[@]}"; do
         if ! branch_exists_local "$branch"; then
+            [[ $push -eq 0 ]] || die "Cannot push missing local branch: $branch"
             echo "Skipping $branch: local branch does not exist."
             continue
         fi
+        push_branches+=("$branch")
 
         git_worktree_transaction_add "$branch" "$branch"
         worktree="$GIT_WORKTREE_PATH"
@@ -274,8 +290,18 @@ sync_shared_command() {
         git_worktree_transaction_remove "$worktree"
     done
 
-    if [[ $apply -eq 0 && $copied_any -eq 0 ]]; then
+    if [[ $push -eq 1 && $copied_any -eq 1 ]]; then
+        die "Refusing to push: shared-file drift remains. Run sync-shared --apply, verify, then retry --push."
+    fi
+
+    if [[ $apply -eq 0 && $push -eq 0 && $copied_any -eq 0 ]]; then
         echo "Dry run: no shared-file drift detected."
+    fi
+
+    if [[ $push -eq 1 ]]; then
+        [[ ${#push_branches[@]} -gt 0 ]] || die "No local branches available to push."
+        git -C "$ROOT_DIR" push --atomic origin "${push_branches[@]}"
+        print_section "Pushed shared-file sync branches atomically:" "${push_branches[@]}"
     fi
 }
 

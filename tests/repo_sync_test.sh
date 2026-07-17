@@ -7,6 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENTS_PATH="$ROOT_DIR/AGENTS.md"
 SCRIPT_PATH="$ROOT_DIR/scripts/repo_sync.sh"
 TAGS_SCRIPT_PATH="$ROOT_DIR/scripts/tags_update.sh"
+DOCKER_HUB_CLEANUP_SCRIPT_PATH="$ROOT_DIR/scripts/docker_hub_cleanup.sh"
 IMAGE_METRICS_SCRIPT_PATH="$ROOT_DIR/scripts/image_metrics.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
@@ -48,6 +49,11 @@ source "$IMAGE_CONTRACT_PATH"
     exit 1
 }
 
+[[ -x "$DOCKER_HUB_CLEANUP_SCRIPT_PATH" ]] || {
+    echo "Missing executable Docker Hub cleanup script: $DOCKER_HUB_CLEANUP_SCRIPT_PATH" >&2
+    exit 1
+}
+
 [[ -x "$IMAGE_METRICS_SCRIPT_PATH" ]] || {
     echo "Missing executable image metrics script: $IMAGE_METRICS_SCRIPT_PATH" >&2
     exit 1
@@ -74,6 +80,7 @@ assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
 assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
 assert_contains "$status_output" "scripts/image_metrics.sh"
+assert_contains "$status_output" "scripts/docker_hub_cleanup.sh"
 assert_contains "$status_output" "config/image-size-baseline.tsv"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
@@ -164,10 +171,131 @@ if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_P
 fi
 assert_file_contains "$TMP_IMAGE_METRICS/missing-amd64.out" 'Missing linux/amd64 digest or size'
 
+test_temp_dir TMP_DOCKER_HUB_CLEANUP docker-hub-cleanup
+mkdir -p "$TMP_DOCKER_HUB_CLEANUP/bin"
+DOCKER_HUB_CURL_LOG="$TMP_DOCKER_HUB_CLEANUP/curl.log"
+DOCKER_HUB_CLEANUP_STATE="$TMP_DOCKER_HUB_CLEANUP/deleted"
+export DOCKER_HUB_CURL_LOG DOCKER_HUB_CLEANUP_STATE
+
+cat > "$TMP_DOCKER_HUB_CLEANUP/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+method=GET
+url=""
+
+for argument in "$@"; do
+    if [[ "$argument" == *test-secret* || "$argument" == *test-bearer* ]]; then
+        echo "Docker Hub credential leaked through curl arguments." >&2
+        exit 1
+    fi
+done
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -X|--request)
+            method="$2"
+            shift 2
+            ;;
+        -d|--data|--data-raw|--data-binary|-H|--header|-o|--output|-w|--write-out|--connect-timeout|--retry|--config)
+            shift 2
+            ;;
+        http://*|https://*)
+            url="$1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+printf '%s\t%s\n' "$method" "$url" >>"$DOCKER_HUB_CURL_LOG"
+
+case "$url" in
+    */auth/token)
+        printf '%s\n' '{"access_token":"test-bearer"}'
+        ;;
+    *'/tags?page_size=100')
+        if [[ -f "$DOCKER_HUB_CLEANUP_STATE" ]]; then
+            printf '%s\n' '{"next":"https://hub.test/v2/page/2","results":[{"name":"8.5","digest":"sha256:85","last_updated":"2026-07-17T00:00:00Z"}]}'
+        else
+            printf '%s\n' '{"next":"https://hub.test/v2/page/2","results":[{"name":"latest","digest":"sha256:latest","last_updated":"2026-07-17T00:00:00Z"},{"name":"php73","digest":"sha256:php73","last_updated":"2026-07-17T00:00:00Z"},{"name":"php74","digest":"sha256:php74","last_updated":"2026-07-17T00:00:00Z"},{"name":"php80","digest":"sha256:php80","last_updated":"2026-07-17T00:00:00Z"},{"name":"php81","digest":"sha256:php81","last_updated":"2026-07-17T00:00:00Z"},{"name":"php82","digest":"sha256:php82","last_updated":"2026-07-17T00:00:00Z"},{"name":"php83","digest":"sha256:php83","last_updated":"2026-07-17T00:00:00Z"},{"name":"php84","digest":"sha256:php84","last_updated":"2026-07-17T00:00:00Z"},{"name":"php85","digest":"sha256:php85","last_updated":"2026-07-17T00:00:00Z"},{"name":"8.5","digest":"sha256:85","last_updated":"2026-07-17T00:00:00Z"}]}'
+        fi
+        ;;
+    */page/2)
+        printf '%s\n' '{"next":null,"results":[{"name":"8.5.1","digest":"sha256:851","last_updated":"2026-07-17T00:00:00Z"},{"name":"canary","digest":"sha256:canary","last_updated":"2026-07-17T00:00:00Z"}]}'
+        ;;
+    */tags/*)
+        [[ "$method" == DELETE ]] || exit 1
+        : >"$DOCKER_HUB_CLEANUP_STATE"
+        ;;
+    *)
+        echo "Unexpected fake Docker Hub request: $method $url" >&2
+        exit 1
+        ;;
+esac
+EOF
+chmod +x "$TMP_DOCKER_HUB_CLEANUP/bin/curl"
+
+cleanup_preview="$(PATH="$TMP_DOCKER_HUB_CLEANUP/bin:$PATH" DOCKER_HUB_API_BASE=https://hub.test/v2 bash "$DOCKER_HUB_CLEANUP_SCRIPT_PATH")"
+assert_contains "$cleanup_preview" 'Retired Docker Hub tags present:'
+for retired_tag in latest php73 php74 php80 php81 php82 php83 php84 php85; do
+    assert_contains "$cleanup_preview" "$retired_tag"
+done
+assert_contains "$cleanup_preview" 'Preserved version-like tags:'
+assert_contains "$cleanup_preview" '8.5'
+assert_contains "$cleanup_preview" '8.5.1'
+assert_contains "$cleanup_preview" 'Other untouched tags:'
+assert_contains "$cleanup_preview" 'canary'
+assert_contains "$cleanup_preview" 'Dry run: no Docker Hub tags were deleted.'
+if grep -Eq $'^(POST|DELETE)\t' "$DOCKER_HUB_CURL_LOG"; then
+    echo "Expected Docker Hub cleanup dry run to avoid authentication and deletion." >&2
+    exit 1
+fi
+
+if PATH="$TMP_DOCKER_HUB_CLEANUP/bin:$PATH" DOCKER_HUB_API_BASE=https://hub.test/v2 bash "$DOCKER_HUB_CLEANUP_SCRIPT_PATH" --apply >"$TMP_DOCKER_HUB_CLEANUP/missing-token.out" 2>&1; then
+    echo "Expected Docker Hub cleanup apply mode to require a token." >&2
+    exit 1
+fi
+assert_file_contains "$TMP_DOCKER_HUB_CLEANUP/missing-token.out" 'DOCKER_HUB_TOKEN is required with --apply.'
+
+: >"$DOCKER_HUB_CURL_LOG"
+rm -f "$DOCKER_HUB_CLEANUP_STATE"
+cleanup_apply="$(PATH="$TMP_DOCKER_HUB_CLEANUP/bin:$PATH" DOCKER_HUB_API_BASE=https://hub.test/v2 DOCKER_HUB_TOKEN=test-secret bash "$DOCKER_HUB_CLEANUP_SCRIPT_PATH" --apply)"
+assert_contains "$cleanup_apply" 'Docker Hub cleanup verified: no retired tags remain.'
+assert_file_contains "$DOCKER_HUB_CURL_LOG" $'POST\thttps://hub.test/v2/auth/token'
+for retired_tag in latest php73 php74 php80 php81 php82 php83 php84 php85; do
+    assert_file_contains "$DOCKER_HUB_CURL_LOG" $'DELETE\thttps://hub.test/v2/namespaces/1allen/repositories/php-apache/tags/'"$retired_tag"
+done
+if grep -Eq $'DELETE\t.*/tags/[0-9]+[.][0-9]+' "$DOCKER_HUB_CURL_LOG"; then
+    echo "Expected Docker Hub cleanup never to delete version-like tags." >&2
+    exit 1
+fi
+delete_count="$(awk -F '\t' '$1 == "DELETE" { count++ } END { print count + 0 }' "$DOCKER_HUB_CURL_LOG")"
+[[ "$delete_count" -eq 9 ]] || {
+    echo "Expected exactly 9 retired Docker Hub tag deletions, got $delete_count." >&2
+    exit 1
+}
+
+: >"$DOCKER_HUB_CURL_LOG"
+cleanup_idempotent="$(PATH="$TMP_DOCKER_HUB_CLEANUP/bin:$PATH" DOCKER_HUB_API_BASE=https://hub.test/v2 bash "$DOCKER_HUB_CLEANUP_SCRIPT_PATH" --apply)"
+assert_contains "$cleanup_idempotent" 'Docker Hub cleanup verified: no retired tags remain.'
+if grep -Eq $'^(POST|DELETE)\t' "$DOCKER_HUB_CURL_LOG"; then
+    echo "Expected an already-clean Docker Hub apply run to avoid authentication and deletion." >&2
+    exit 1
+fi
+
 assert_file_contains "$README_PATH" 'bash scripts/image_metrics.sh'
+assert_file_contains "$README_PATH" 'bash scripts/docker_hub_cleanup.sh'
+assert_file_contains "$README_PATH" 'bash scripts/repo_sync.sh sync-shared --push'
 assert_file_contains "$DOCS_README_PATH" 'config/image-size-baseline.tsv'
+assert_file_contains "$DOCS_README_PATH" 'scripts/docker_hub_cleanup.sh'
 assert_file_contains "$MAINTENANCE_PATH" 'pre-cleanup Docker Hub snapshot'
+assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/docker_hub_cleanup.sh --apply'
+assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/repo_sync.sh sync-shared --push'
 assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
+assert_file_contains "$DECISIONS_PATH" 'Automate Repeatable External Effects Behind Apply Gates'
 
 assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
@@ -496,13 +624,14 @@ assert_file_contains "$TAG_PUBLISH_OUTPUT" 'Refusing to publish non-version tag:
 rm -rf "$TMP_DOCKER_BIN"
 
 test_temp_dir TMP_REPO repo-sync-test
+TMP_REPO_REMOTE="${TMP_REPO}-remote.git"
+rm -rf "$TMP_REPO_REMOTE"
+git init --bare "$TMP_REPO_REMOTE" >/dev/null 2>&1
 
-mkdir -p "$TMP_REPO/scripts/lib" "$TMP_REPO/config"
-cp "$SCRIPT_PATH" "$TMP_REPO/scripts/repo_sync.sh"
-cp "$RELEASE_REF_PATH" "$TMP_REPO/scripts/lib/release_ref.sh"
-cp "$IMAGE_CONTRACT_PATH" "$TMP_REPO/scripts/lib/image_contract.sh"
-cp "$GIT_WORKTREE_PATH" "$TMP_REPO/scripts/lib/git_worktree.sh"
-cp "$MANIFEST_PATH" "$TMP_REPO/config/php-branches.conf"
+for shared_file in "${SHARED_FILES[@]}"; do
+    mkdir -p "$TMP_REPO/$(dirname "$shared_file")"
+    cp "$ROOT_DIR/$shared_file" "$TMP_REPO/$shared_file"
+done
 cp "$DOCKERFILE_PATH" "$TMP_REPO/Dockerfile.ubuntu"
 chmod +x "$TMP_REPO/scripts/repo_sync.sh"
 
@@ -518,6 +647,30 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
     assert_contains "$bootstrap_apply_output" "Target branch: php85"
     assert_contains "$bootstrap_apply_output" "Created php85"
     git show-ref --verify --quiet refs/heads/php85
+
+    git remote add origin "$TMP_REPO_REMOTE"
+    git push origin latest php85 >/dev/null 2>&1
+
+    printf '\nShared workflow update.\n' >>README.md
+    git add README.md
+    git -c commit.gpgsign=false commit -m "test shared update" >/dev/null
+
+    if sync_push_drift_output="$(bash scripts/repo_sync.sh sync-shared --push php85 2>&1)"; then
+        echo "Expected sync-shared --push to reject remaining shared-file drift." >&2
+        exit 1
+    fi
+    assert_contains "$sync_push_drift_output" 'Refusing to push: shared-file drift remains.'
+
+    sync_apply_output="$(bash scripts/repo_sync.sh sync-shared --apply php85)"
+    assert_contains "$sync_apply_output" 'php85: committed shared-file sync.'
+    sync_push_output="$(bash scripts/repo_sync.sh sync-shared --push php85)"
+    assert_contains "$sync_push_output" 'Pushed shared-file sync branches atomically:'
+    assert_contains "$sync_push_output" 'php85'
+    [[ "$(git rev-parse php85)" == "$(git --git-dir="$TMP_REPO_REMOTE" rev-parse refs/heads/php85)" ]] || {
+        echo "Expected sync-shared --push to update the remote php85 branch." >&2
+        exit 1
+    }
+    assert_contains "$(git show php85:README.md)" 'Shared workflow update.'
 
     if bash -c '
         set -euo pipefail
