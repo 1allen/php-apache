@@ -144,6 +144,30 @@ repository synchronization, and tag scripts are adapters at those seams. Tests
 should exercise module interfaces and command outcomes rather than duplicating
 private implementation text.
 
+## Automate Repeatable External Effects Behind Apply Gates
+
+Routine branch propagation and registry retirement must be maintained
+interfaces, not command sequences reconstructed by each operator. Keep local
+shared-file commit creation and remote branch mutation as separate phases of
+`scripts/repo_sync.sh sync-shared`: `--apply` creates the commits, required
+checks run against those commits, and `--push` first proves that no shared-file
+drift remains before atomically pushing the complete target branch set. A
+missing, divergent, or unsynchronized branch must fail the push rather than
+silently producing a partial rollout.
+
+Keep destructive Docker Hub retirement in `scripts/docker_hub_cleanup.sh`, not
+in the read-only image metrics module or CI publication path. Its default mode
+inventories the repository and previews the exact retired tags. `--apply`
+authenticates only when deletions are required, derives its strict allowlist
+from `latest` plus configured PHP branch names, refuses version-like deletion
+targets, deletes only tags currently present, and verifies that none remain.
+The version-like consumer tags and any unrecognized tags remain untouched.
+
+These interfaces deepen existing workflow seams: callers select a reviewed
+phase while branch enumeration, atomicity, deletion policy, authentication,
+and verification remain local to the maintained scripts. They do not turn
+one-time registry retirement into an automatic CI side effect.
+
 ## Use Existing Maintenance Interfaces First
 
 Repository maintenance is not a blank-slate workflow-design exercise. The
@@ -151,7 +175,8 @@ runbook and maintained scripts are project interfaces that encode branch,
 release, provider-neutral CI, and frozen-version policy. Work must first route
 through `scripts/repo_sync.sh sync-shared`, `scripts/repo_sync.sh
 verify-image-tooling`, `scripts/ci/docker_build.sh`,
-`scripts/ci/trivy_scan.sh`, and `scripts/tags_update.sh`, as applicable.
+`scripts/ci/trivy_scan.sh`, `scripts/tags_update.sh`, and
+`scripts/docker_hub_cleanup.sh`, as applicable.
 
 Do not replace that flow with parallel rollout pull requests, temporary rollout
 branches, duplicate scripts, or new orchestration merely because another
