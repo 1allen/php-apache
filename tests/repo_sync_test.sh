@@ -116,24 +116,49 @@ test_temp_dir TMP_IMAGE_METRICS image-metrics
 metrics_api_root="$TMP_IMAGE_METRICS/1allen/php-apache/tags"
 mkdir -p "$metrics_api_root"
 
-cat > "$metrics_api_root/php85" <<'EOF'
+cat > "$metrics_api_root/8.5" <<'EOF'
 {"digest":"sha256:current-php85","images":[{"architecture":"amd64","os":"linux","size":600000000}]}
 EOF
 
-metrics_output="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv php85)"
+metrics_output="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv 8.5)"
 assert_contains "$metrics_output" $'tag\tbaseline_bytes\tcurrent_bytes\tsaved_bytes\tsaved_percent\tcurrent_digest\tbaseline_digest\tbaseline_tag_last_updated'
-assert_contains "$metrics_output" $'php85\t645640060\t600000000\t45640060\t7.07\tsha256:current-php85'
+assert_contains "$metrics_output" $'8.5\t645640060\t600000000\t45640060\t7.07\tsha256:current-php85'
 assert_contains "$metrics_output" $'TOTAL\t645640060\t600000000\t45640060\t7.07\t-\t-\t-'
 
-metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" php85)"
-assert_contains "$metrics_markdown" '| php85 | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 |'
+metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" 8.5)"
+assert_contains "$metrics_markdown" '| 8.5 | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 |'
 assert_contains "$metrics_markdown" '| **Total (1 tag)** | **615.7 MiB** | **572.2 MiB** | **43.5 MiB** | **7.07%** | - |'
 
-cat > "$metrics_api_root/php84" <<'EOF'
+BUILD_METRICS_FIXTURE="$TMP_IMAGE_METRICS/build-metrics.tsv"
+cat > "$BUILD_METRICS_FIXTURE" <<'EOF'
+tag	cache_prepare_seconds	build_seconds	publish_seconds	total_seconds	cache_sources
+8.5	3	42	7	55	1allen/php-apache:8.5,spritsail/debian-builder:latest
+EOF
+
+timed_metrics_output="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$BUILD_METRICS_FIXTURE" --format tsv 8.5)"
+assert_contains "$timed_metrics_output" $'tag\tcache_prepare_seconds\tbuild_seconds\tpublish_seconds\ttotal_seconds\tbaseline_bytes\tcurrent_bytes\tsaved_bytes\tsaved_percent\tcurrent_digest\tbaseline_digest\tbaseline_tag_last_updated\tcache_sources'
+assert_contains "$timed_metrics_output" $'8.5\t3\t42\t7\t55\t645640060\t600000000\t45640060\t7.07\tsha256:current-php85\tsha256:62aebc2ea3adb603f438814f73914dcb822acffe2130bfcc537212d749ef7501\t2026-06-28T16:59:25.063933Z\t1allen/php-apache:8.5,spritsail/debian-builder:latest'
+
+timed_metrics_markdown="$(DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$BUILD_METRICS_FIXTURE" 8.5)"
+assert_contains "$timed_metrics_markdown" '| Tag | Cache prep | Build | Publish | Total | Baseline | Current | Saved | Saved % | Current digest | Cache sources |'
+assert_contains "$timed_metrics_markdown" '| 8.5 | 3s | 42s | 7s | 55s | 615.7 MiB | 572.2 MiB | 43.5 MiB | 7.07% | sha256:current-php85 | 1allen/php-apache:8.5, spritsail/debian-builder:latest |'
+
+INVALID_BUILD_METRICS_FIXTURE="$TMP_IMAGE_METRICS/invalid-build-metrics.tsv"
+cat > "$INVALID_BUILD_METRICS_FIXTURE" <<'EOF'
+tag	cache_prepare_seconds	build_seconds	publish_seconds	total_seconds	cache_sources
+8.5	3	not-a-number	7	55	1allen/php-apache:8.5
+EOF
+if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --build-metrics "$INVALID_BUILD_METRICS_FIXTURE" 8.5 >"$TMP_IMAGE_METRICS/invalid-build-metrics.out" 2>&1; then
+    echo "Expected image metrics to reject an invalid build timing record." >&2
+    exit 1
+fi
+assert_file_contains "$TMP_IMAGE_METRICS/invalid-build-metrics.out" 'Missing valid build metrics for tag: 8.5'
+
+cat > "$metrics_api_root/8.4" <<'EOF'
 {"digest":"sha256:arm-only","images":[{"architecture":"arm64","os":"linux","size":1234}]}
 EOF
 
-if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv php84 >"$TMP_IMAGE_METRICS/missing-amd64.out" 2>&1; then
+if DOCKER_HUB_API_BASE="file://$TMP_IMAGE_METRICS" bash "$IMAGE_METRICS_SCRIPT_PATH" --format tsv 8.4 >"$TMP_IMAGE_METRICS/missing-amd64.out" 2>&1; then
     echo "Expected image metrics to reject metadata without linux/amd64 size." >&2
     exit 1
 fi
@@ -189,25 +214,35 @@ assert_file_contains "$MAINTENANCE_PATH" 'SERVICE_PHPFPM_OPTS: "-R"'
 assert_file_contains "$MAINTENANCE_PATH" 'Do not use this mode with a rootful Docker daemon.'
 assert_file_contains "$DECISIONS_PATH" '## Use One Image For Rootless Docker'
 assert_file_contains "$AGENTS_PATH" 'Treat the documented maintenance interfaces as authoritative'
+assert_file_contains "$AGENTS_PATH" 'PHP branches are preflight-only'
 assert_file_contains "$MAINTENANCE_PATH" '## Workflow Change Gate'
+assert_file_contains "$MAINTENANCE_PATH" 'Version-like Git tags are the only Docker Hub publish refs.'
 assert_file_contains "$DECISIONS_PATH" '## Use Existing Maintenance Interfaces First'
+assert_file_contains "$DECISIONS_PATH" '## Publish Version Tags Once'
+assert_file_contains "$DECISIONS_PATH" '## Join Build And Image Metrics At A File Seam'
+assert_file_contains "$DOCS_README_PATH" '**Release-source preflight**'
+assert_file_contains "$README_PATH" 'Published PHP images come only from version-like Git tags.'
+assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv'
 assert_file_contains "$SEMAPHORE_PATH" 'type: e1-standard-2'
 assert_file_contains "$SEMAPHORE_PATH" 'os_image: ubuntu2404'
 assert_file_contains "$SEMAPHORE_PATH" 'global_job_config:'
 assert_file_contains "$SEMAPHORE_PATH" 'prologue:'
 assert_file_contains "$SEMAPHORE_PATH" 'checkout'
 assert_file_contains "$SEMAPHORE_PATH" 'name: build image'
-assert_file_contains "$SEMAPHORE_PATH" "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN'"
+assert_file_contains "$SEMAPHORE_PATH" "pull_request =~ '^.+$' OR branch = 'latest'"
+assert_file_contains "$SEMAPHORE_PATH" 'name: verify release source'
+assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN')"
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PATH" 'value: build'
+assert_file_contains "$SEMAPHORE_PATH" 'value: preflight'
 assert_file_contains "$SEMAPHORE_PATH" 'promotions:'
 assert_file_contains "$SEMAPHORE_PATH" 'name: publish final image'
 assert_file_contains "$SEMAPHORE_PATH" 'pipeline_file: publish.yml'
-assert_file_contains "$SEMAPHORE_PATH" "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '$PUBLISH_TAG_PATTERN')"
+assert_file_contains "$SEMAPHORE_PATH" "result = 'passed' AND pull_request !~ '^.+$' AND tag =~ '$PUBLISH_TAG_PATTERN'"
 assert_file_not_contains "$SEMAPHORE_PATH" '*run_docker_ci'
 assert_file_not_contains "$SEMAPHORE_PATH" '&run_docker_ci'
 
@@ -221,6 +256,9 @@ assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'bash scripts/ci/trivy_scan.sh'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'value: build-publish'
 assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'dockerhub-1allen'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'CI_BUILD_METRICS_FILE=/tmp/php-apache-build-metrics.tsv'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'if ! bash scripts/image_metrics.sh --build-metrics /tmp/php-apache-build-metrics.tsv; then'
+assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'Warning: release metrics report failed'
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '*run_docker_ci'
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '&run_docker_ci'
 
@@ -232,22 +270,28 @@ publish_config = YAML.load_file(ARGV.fetch(1))
 build_blocks = build_config.fetch("blocks")
 publish_blocks = publish_config.fetch("blocks")
 smoke = build_blocks.find { |block| block["name"] == "build image" } or abort "Missing build image block"
+preflight = build_blocks.find { |block| block["name"] == "verify release source" } or abort "Missing verify release source block"
 publish = publish_blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
 scan = publish_blocks.find { |block| block["name"] == "scan published image" } or abort "Missing scan published image block"
 
-abort "Root pipeline must have one visible block" unless build_blocks.size == 1
+abort "Root pipeline must have build and preflight blocks" unless build_blocks.size == 2
 abort "Global prologue must run checkout" unless build_config.fetch("global_job_config").fetch("prologue").fetch("commands") == ["checkout"]
 abort "Build image block should not define empty dependencies" if smoke.key?("dependencies")
-abort "Build image block must run for PRs, latest, and publishable refs" unless smoke.fetch("run").fetch("when") == "pull_request =~ '^.+$' OR branch = 'latest' OR branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
+abort "Build image block must run only for PRs and latest" unless smoke.fetch("run").fetch("when") == "pull_request =~ '^.+$' OR branch = 'latest'"
 abort "Build image block must not receive secrets" if smoke.fetch("task", {}).key?("secrets")
 abort "Build image block must set build mode" unless smoke.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build" }
+abort "Preflight block must run for release sources" unless preflight.fetch("run").fetch("when") == "pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
+abort "Preflight block must not receive secrets" if preflight.fetch("task", {}).key?("secrets")
+abort "Preflight block must set preflight mode" unless preflight.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "preflight" }
 promotion = build_config.fetch("promotions").find { |item| item["name"] == "publish final image" } or abort "Missing publish final image promotion"
 abort "Publish promotion must target publish.yml" unless promotion["pipeline_file"] == "publish.yml"
-unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND pull_request !~ '^.+$' AND (branch =~ '^php[0-9][0-9]$' OR tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$')"
-    abort "Publish promotion must only run after passed publishable refs"
+unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND pull_request !~ '^.+$' AND tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
+    abort "Publish promotion must only run after passed version tags"
 end
 abort "Publish image block must explicitly define no dependencies" unless publish.fetch("dependencies") == []
 abort "Publish image block must set publish mode" unless publish.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build-publish" }
+publish_commands = publish.fetch("task").fetch("jobs").fetch(0).fetch("commands")
+abort "Every publish job command must be a string" unless publish_commands.all? { |command| command.is_a?(String) }
 unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
     abort "Publish image block must receive dockerhub-1allen secret"
 end
@@ -273,7 +317,7 @@ release_ref_result="$(
     release_ref_resolve
     printf '%s|%s|%s|%s\n' "$RELEASE_REF_BRANCH" "$RELEASE_REF_TAG" "$RELEASE_REF_TYPE" "$RELEASE_REF_PUBLISH_TAG"
 )"
-[[ "$release_ref_result" == 'php85||branch|php85' ]] || {
+[[ "$release_ref_result" == 'php85||branch|' ]] || {
     echo "Unexpected PHP branch classification: $release_ref_result" >&2
     exit 1
 }
@@ -292,6 +336,11 @@ release_ref_result="$(
 
 [[ "$(release_ref_branch_to_version php85)" == '8.5' ]] || {
     echo "Expected php85 to convert to tag 8.5" >&2
+    exit 1
+}
+
+[[ "$(release_ref_version_to_branch 8.5.1)" == 'php85' ]] || {
+    echo "Expected 8.5.1 to convert to branch php85" >&2
     exit 1
 }
 
@@ -349,15 +398,16 @@ default_image_ref="$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME"
 install_docker_capture "$TMP_DOCKER_BIN"
 
 feature_push_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=feature/test CI_GIT_REF_TYPE=branch bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
-assert_contains "$feature_push_ci_output" 'Non-publish ref: skipping Docker build'
+assert_contains "$feature_push_ci_output" 'Non-build ref: skipping Docker build'
 if [[ -s "$CI_DOCKER_LOG" ]]; then
     echo "Expected ordinary feature branch push to avoid Docker commands." >&2
     exit 1
 fi
 
 build_only_ci_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=latest bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
-assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu ."
+assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:$DEFAULT_BUILD_CACHE_TAG --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu ."
 assert_contains "$build_only_ci_output" 'Build-only branch: not publishing image'
+assert_contains "$build_only_ci_output" 'Docker build completed in'
 if grep -Fq -- "-t $DEFAULT_IMAGE_NAME:" "$CI_DOCKER_LOG"; then
     echo "Expected latest build-only CI run to avoid tagging the image." >&2
     exit 1
@@ -365,7 +415,7 @@ fi
 
 : > "$CI_DOCKER_LOG"
 pr_target_branch_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
-assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu ."
+assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:8.5 --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu ."
 assert_contains "$pr_target_branch_output" 'Build-only branch: not publishing image'
 if grep -Fq -- "-t $DEFAULT_IMAGE_NAME:" "$CI_DOCKER_LOG"; then
     echo "Expected pull-request build-only CI run to avoid tagging the image." >&2
@@ -373,32 +423,62 @@ if grep -Fq -- "-t $DEFAULT_IMAGE_NAME:" "$CI_DOCKER_LOG"; then
 fi
 
 : > "$CI_DOCKER_LOG"
-publishable_build_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
-assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:php85 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:php85 ."
-assert_contains "$publishable_build_output" "Publishable ref built without publishing: $DEFAULT_IMAGE_NAME:php85"
-if grep -Fq -- 'docker login' "$CI_DOCKER_LOG" || grep -Fq -- 'docker push' "$CI_DOCKER_LOG"; then
-    echo "Expected CI build mode to avoid Docker login/push." >&2
+php_branch_build_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_contains "$php_branch_build_output" 'Non-build ref: skipping Docker build'
+if [[ -s "$CI_DOCKER_LOG" ]]; then
+    echo "Expected PHP branch build mode to avoid all Docker commands." >&2
     exit 1
 fi
 
 : > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH"
-assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:php85 --cache-from $default_image_ref:latest --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:php85 ."
+branch_preflight_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_DOCKER_MODE=preflight bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_contains "$branch_preflight_output" 'Release source preflight passed: php85'
+if [[ -s "$CI_DOCKER_LOG" ]]; then
+    echo "Expected release preflight to avoid all Docker commands." >&2
+    exit 1
+fi
+
+: > "$CI_DOCKER_LOG"
+BUILD_METRICS_OUTPUT="$TMP_DOCKER_BIN/build-metrics.tsv"
+tag_publish_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=8.5 CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish CI_BUILD_METRICS_FILE="$BUILD_METRICS_OUTPUT" DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:8.5 --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:8.5 ."
 assert_file_contains "$CI_DOCKER_LOG" "docker login -u $DEFAULT_DOCKER_USERNAME --password-stdin"
-assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:php85"
+assert_file_contains "$CI_DOCKER_LOG" "docker push $default_image_ref:8.5"
+assert_contains "$tag_publish_output" 'Docker build completed in'
+assert_file_contains "$BUILD_METRICS_OUTPUT" $'tag\tcache_prepare_seconds\tbuild_seconds\tpublish_seconds\ttotal_seconds\tcache_sources'
+if ! awk -F '\t' -v expected_cache="$default_image_ref:8.5,$DEFAULT_BUILDER_IMAGE" '
+    NR == 2 && $1 == "8.5" && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ \
+        && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ && $6 == expected_cache { found = 1 }
+    END { exit !found }
+' "$BUILD_METRICS_OUTPUT"; then
+    echo "Expected build metrics to contain numeric timings and cache sources." >&2
+    exit 1
+fi
 if grep -Fq -- 'docker run --rm aquasec/trivy' "$CI_DOCKER_LOG"; then
     echo "Expected publish script not to run Trivy directly." >&2
     exit 1
 fi
 
 : > "$CI_DOCKER_LOG"
-PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 bash "$CI_TRIVY_SCAN_SCRIPT_PATH"
-assert_file_contains "$CI_DOCKER_LOG" "docker run --rm aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:php85"
+PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=8.5 CI_GIT_REF_TYPE=tag bash "$CI_TRIVY_SCAN_SCRIPT_PATH"
+assert_file_contains "$CI_DOCKER_LOG" "docker run --rm aquasec/trivy:latest image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:8.5"
 
 : > "$CI_DOCKER_LOG"
-failed_scan_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 TRIVY_IMAGE=failing-trivy bash "$CI_TRIVY_SCAN_SCRIPT_PATH" 2>&1)"
-assert_contains "$failed_scan_output" "Warning: non-blocking Trivy scan failed for $default_image_ref:php85"
-assert_file_contains "$CI_DOCKER_LOG" "docker run --rm failing-trivy image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:php85"
+failed_scan_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=8.5 CI_GIT_REF_TYPE=tag TRIVY_IMAGE=failing-trivy bash "$CI_TRIVY_SCAN_SCRIPT_PATH" 2>&1)"
+assert_contains "$failed_scan_output" "Warning: non-blocking Trivy scan failed for $default_image_ref:8.5"
+assert_file_contains "$CI_DOCKER_LOG" "docker run --rm failing-trivy image --exit-code 0 --severity HIGH,CRITICAL $default_image_ref:8.5"
+
+: > "$CI_DOCKER_LOG"
+patch_publish_output="$(PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_TAG=8.5.1 CI_GIT_REF_TYPE=tag CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH")"
+assert_file_contains "$CI_DOCKER_LOG" "docker build --pull --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from $default_image_ref:8.5.1 --cache-from $default_image_ref:8.5 --cache-from $DEFAULT_BUILDER_IMAGE -f Dockerfile.ubuntu -t $DEFAULT_IMAGE_NAME:8.5.1 ."
+assert_contains "$patch_publish_output" 'Docker build completed in'
+
+: > "$CI_DOCKER_LOG"
+if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=branch CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >"$TAG_PUBLISH_OUTPUT" 2>&1; then
+    echo "Expected PHP branch build-publish mode to fail." >&2
+    exit 1
+fi
+assert_file_contains "$TAG_PUBLISH_OUTPUT" 'Refusing to publish from non-version ref: php85.'
 
 : > "$CI_DOCKER_LOG"
 if PATH="$TMP_DOCKER_BIN:$PATH" CI_GIT_BRANCH=php85 CI_GIT_REF_TYPE=pull-request CI_DOCKER_MODE=build-publish DOCKER_PASSWORD=test bash "$CI_DOCKER_BUILD_SCRIPT_PATH" >"$PR_PUBLISH_OUTPUT" 2>&1; then

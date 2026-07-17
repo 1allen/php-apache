@@ -27,8 +27,6 @@ release_ref_resolve() {
     RELEASE_REF_PUBLISH_TAG=""
     if [[ -n "$RELEASE_REF_TAG" && "$RELEASE_REF_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
         RELEASE_REF_PUBLISH_TAG="$RELEASE_REF_TAG"
-    elif [[ -z "$RELEASE_REF_TAG" && "$RELEASE_REF_TYPE" != "pull-request" && "$RELEASE_REF_BRANCH" =~ $PHP_BRANCH_PATTERN ]]; then
-        RELEASE_REF_PUBLISH_TAG="$RELEASE_REF_BRANCH"
     fi
 }
 
@@ -49,4 +47,24 @@ release_ref_branch_to_version() {
     [[ "$branch_name" =~ $PHP_BRANCH_PATTERN ]] || return 1
     digits="${branch_name#php}"
     printf '%s.%s\n' "${digits:0:1}" "${digits:1}"
+}
+
+release_ref_version_to_branch() {
+    local version="$1"
+    local major
+    local minor
+
+    [[ "$version" =~ $PUBLISH_TAG_PATTERN ]] || return 1
+    IFS=. read -r major minor _ <<<"$version"
+    printf 'php%s%s\n' "$major" "$minor"
+}
+
+release_ref_version_to_minor() {
+    local version="$1"
+    local major
+    local minor
+
+    [[ "$version" =~ $PUBLISH_TAG_PATTERN ]] || return 1
+    IFS=. read -r major minor _ <<<"$version"
+    printf '%s.%s\n' "$major" "$minor"
 }
