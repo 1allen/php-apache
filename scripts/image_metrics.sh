@@ -5,6 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/config/php-branches.conf"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/lib/release_ref.sh"
 
 DOCKER_USERNAME="${DOCKER_USERNAME:-$DEFAULT_DOCKER_USERNAME}"
 IMAGE_NAME="${IMAGE_NAME:-$DEFAULT_IMAGE_NAME}"
@@ -21,7 +23,7 @@ Usage:
                                 [--build-metrics FILE] [tag...]
 
 Reports the current compressed linux/amd64 size from Docker Hub and compares it
-with the recorded baseline. Supported phpXX tags are reported by default.
+with the recorded baseline. Supported X.Y consumer tags are reported by default.
 
 Environment overrides:
   DOCKER_USERNAME       Docker Hub namespace
@@ -42,8 +44,13 @@ require_command() {
 
 baseline_for_tag() {
     local tag="$1"
+    local baseline_tag="$tag"
 
-    awk -F '\t' -v tag="$tag" '
+    if [[ "$tag" =~ $PUBLISH_TAG_PATTERN ]]; then
+        baseline_tag="$(release_ref_version_to_branch "$tag")"
+    fi
+
+    awk -F '\t' -v tag="$baseline_tag" '
         NR > 1 && $1 == tag {
             print $2 "\t" $3 "\t" $4
             found = 1
@@ -159,7 +166,9 @@ if [[ ${#target_tags[@]} -eq 0 ]]; then
             [[ -n "$tag" ]] && target_tags+=("$tag")
         done < <(awk -F '\t' 'NR > 1 { print $1 }' "$BUILD_METRICS_FILE")
     else
-        target_tags=("${SUPPORTED_PHP_BRANCHES[@]}")
+        for branch in "${SUPPORTED_PHP_BRANCHES[@]}"; do
+            target_tags+=("$(release_ref_branch_to_version "$branch")")
+        done
     fi
 fi
 

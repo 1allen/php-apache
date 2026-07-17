@@ -45,6 +45,10 @@ and `php74`. Maintenance that touches these branches must name them explicitly.
 **Build-only CI**: a CI run that builds the Dockerfile as a smoke test without
 tagging or publishing an image.
 
+**Release-source preflight**: a Docker-free CI check that validates the current
+PHP branch or version-tag Dockerfile against the maintained image contract.
+Only a version-like Git tag proceeds from preflight to build and publish.
+
 **Bundled imagick**: the PECL `imagick` extension included in the published
 image and linked against the custom ImageMagick installation under `/usr/local`.
 
