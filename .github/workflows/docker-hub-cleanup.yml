@@ -1,0 +1,26 @@
+name: Docker Hub cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-hub-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete retired Docker Hub tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require latest branch
+        run: test "$GITHUB_REF" = refs/heads/latest
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Apply and verify cleanup
+        env:
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: bash scripts/docker_hub_cleanup.sh --apply
