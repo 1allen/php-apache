@@ -63,10 +63,10 @@ As of 2026-07-16:
 - Semaphore does not pass Docker image artifacts between jobs and does not keep
   a dedicated writable registry cache. Published semver images provide the
   initial read-only inline cache without extra artifact storage.
-- Docker Hub retirement is available as the manual `clean up retired Docker
-  Hub tags` promotion on a successful `latest` workflow. It is never
-  auto-promoted and reuses the protected `dockerhub-1allen` secret only inside
-  Semaphore.
+- Docker Hub retirement is available through the manual Docker Hub cleanup workflow
+  in GitHub Actions. It has only a `workflow_dispatch` trigger, requires
+  the `latest` branch, and reads the deletion-capable Docker Hub PAT from the
+  protected `DOCKER_HUB_TOKEN` Actions secret.
 - CI declaration files call `scripts/ci/docker_build.sh` instead of embedding
   the Docker build and publish shell logic. Semaphore is the current CI adapter,
   not the long-term interface. New CI providers should map their native
@@ -344,7 +344,7 @@ machinery:
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
-| Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual Semaphore promotion |
+| Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
 
 Before changing external state, preview the exact commands and their branch,
@@ -422,14 +422,14 @@ DOCKER_HUB_TOKEN=... bash scripts/docker_hub_cleanup.sh --apply
 bash scripts/image_metrics.sh
 ```
 
-If the credential is available only as Semaphore's protected
-`dockerhub-1allen` secret, open a successful `latest` workflow and manually run
-the `clean up retired Docker Hub tags` promotion. The promoted
-`.semaphore/cleanup.yml` pipeline refuses non-`latest` workflow sources, maps
-the protected publish credential to `DOCKER_HUB_TOKEN` only in the job
-environment, invokes the same `scripts/docker_hub_cleanup.sh --apply`
-interface, and prints the post-delete verification. The promotion has no
-`auto_promote` rule and must never be made automatic.
+If the deletion-capable PAT is stored as GitHub's protected
+`DOCKER_HUB_TOKEN` Actions secret, open the `Docker Hub cleanup` workflow,
+select **Run workflow**, and choose the `latest` branch. The
+`.github/workflows/docker-hub-cleanup.yml` adapter has only a manual
+`workflow_dispatch` trigger, refuses any ref other than `refs/heads/latest`,
+invokes the same `scripts/docker_hub_cleanup.sh --apply` interface, and prints
+the post-delete verification. Do not add `push`, `pull_request`, or `schedule`
+triggers to this destructive workflow.
 
 Apply mode obtains a short-lived Docker Hub bearer token, deletes only `latest`
 and configured `phpXX` names that are currently present, then inventories the

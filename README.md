@@ -149,8 +149,8 @@ bash scripts/repo_sync.sh sync-shared --push
 Use `bash scripts/docker_hub_cleanup.sh` to audit retired branch-named and
 floating Docker Hub tags. Its explicit `--apply` mode deletes only the
 policy-derived retired set and verifies the result. When the Docker Hub
-credential is available only to Semaphore, use the documented
-manual Semaphore cleanup promotion.
+deletion PAT is stored in GitHub, use the documented
+manual GitHub Actions cleanup workflow.
 
 Branch propagation and publishing have additional guardrails. Follow the
 maintenance runbook rather than copying CI or synchronization commands into a
