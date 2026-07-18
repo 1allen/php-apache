@@ -168,13 +168,13 @@ phase while branch enumeration, atomicity, deletion policy, authentication,
 and verification remain local to the maintained scripts. They do not turn
 one-time registry retirement into an automatic CI side effect.
 
-When the only available Docker Hub credential is Semaphore's protected publish
-secret, expose cleanup as a manual Semaphore promotion from `latest`. The thin
-adapter may map the protected `DOCKER_PASSWORD` value to the cleanup script's
-provider-neutral `DOCKER_HUB_TOKEN` input, but deletion policy and verification
-remain in `scripts/docker_hub_cleanup.sh`. The promotion must have no
-`auto_promote` rule, must reject non-`latest` workflow sources, and must reuse
-the existing `dockerhub-1allen` secret without making it locally readable.
+When the deletion-capable Docker Hub PAT is stored in GitHub, expose cleanup as
+a manual GitHub Actions workflow on `latest`. The thin adapter passes the
+protected `DOCKER_HUB_TOKEN` secret to the provider-neutral cleanup script, but
+deletion policy and verification remain in `scripts/docker_hub_cleanup.sh`.
+The workflow must have only a `workflow_dispatch` trigger, must reject
+non-`latest` refs, and must not turn registry retirement into an automatic CI
+side effect.
 
 ## Use Existing Maintenance Interfaces First
 
