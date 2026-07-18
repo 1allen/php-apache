@@ -423,8 +423,12 @@ bash scripts/image_metrics.sh
 ```
 
 If the deletion-capable PAT is stored as GitHub's protected
-`DOCKER_HUB_TOKEN` Actions secret, open the `Docker Hub cleanup` workflow,
-select **Run workflow**, and choose the `latest` branch. The
+`DOCKER_HUB_TOKEN` Actions secret, an operator with write access to the repository
+can open **Actions**, select the **Docker Hub cleanup** workflow, select
+**Run workflow**, choose the `latest` branch, and confirm **Run workflow**.
+Repository administrators maintain the secret; operators can run the workflow
+without seeing its value. Review the resulting workflow log for the inventory,
+deletions, and final verification. The
 `.github/workflows/docker-hub-cleanup.yml` adapter has only a manual
 `workflow_dispatch` trigger, refuses any ref other than `refs/heads/latest`,
 invokes the same `scripts/docker_hub_cleanup.sh --apply` interface, and prints
@@ -436,10 +440,18 @@ and configured `phpXX` names that are currently present, then inventories the
 repository again and fails unless all retired names are absent. The script
 refuses to classify `X.Y` or `X.Y.Z` tags as deletion targets. This is a
 one-time external cleanup; tag-only CI publishing prevents those names from
-being recreated. After either apply adapter succeeds, rerun the local dry run
-and `scripts/image_metrics.sh` to verify the final public state.
+being recreated. The workflow is safe to rerun: when no retired tags exist,
+the script exits successfully without authenticating or deleting anything.
+After either apply adapter succeeds, rerun the local dry run and
+`scripts/image_metrics.sh` to verify the final public state.
 
 ## Branch Flow
+
+The repository setting should automatically delete merged pull-request head
+branches. After closing an unmerged pull request, delete its head branch only
+after confirming that the work was intentionally discarded. Use `git fetch
+--prune` to remove stale remote-tracking refs; never infer that a remote branch
+still exists solely from an unpruned local `origin/*` ref.
 
 1. Make shared changes on `latest`.
 2. Confirm shared files are listed in `config/php-branches.conf`.
