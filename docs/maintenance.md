@@ -339,7 +339,7 @@ machinery:
 
 | Outcome | Maintained interface |
 | --- | --- |
-| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply\|--push]` |
+| Propagate shared files and deletions | `bash scripts/repo_sync.sh sync-shared [--apply\|--push]` |
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
@@ -454,7 +454,12 @@ after confirming that the work was intentionally discarded. Use `git fetch
 still exists solely from an unpruned local `origin/*` ref.
 
 1. Make shared changes on `latest`.
-2. Confirm shared files are listed in `config/php-branches.conf`.
+2. Confirm maintained shared files are listed in `SHARED_FILES` and retired
+   shared paths are listed in `SHARED_FILE_TOMBSTONES` in
+   `config/php-branches.conf`. A tombstoned path must already be absent from
+   `latest`; dry run reports any supported branch where it remains, and
+   `--apply` records its deletion in that branch's shared-file sync commit.
+   Keep the tombstone while the path remains intentionally retired.
    `.dockerignore` is shared so build-context hygiene stays consistent.
 3. If `Dockerfile.ubuntu` changes, apply the same Dockerfile behavior to each
    `phpXX` branch intentionally. `Dockerfile.ubuntu` is not a shared file

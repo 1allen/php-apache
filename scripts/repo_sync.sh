@@ -23,9 +23,9 @@ Usage:
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
 Commands:
-  status             Show configured branches, local/remote branches, shared files,
-                     and advisory upstream Docker Hub tags.
-  sync-shared        Sync shared files from the source branch into local PHP branches.
+  status             Show configured branches, local/remote branches, shared files and
+                     tombstones, and advisory upstream Docker Hub tags.
+  sync-shared        Sync shared files and deletions from the source branch into local PHP branches.
                      Dry-run by default. Targets supported branches only unless
                      explicit branches are provided.
                      Use --apply to create branch-local commits. After required
@@ -175,6 +175,7 @@ status_command() {
     print_array_section "Remote PHP branches:" "${remote_branches[@]+"${remote_branches[@]}"}"
     print_array_section "Configured branches missing locally:" "${missing_local[@]+"${missing_local[@]}"}"
     print_array_section "Shared files:" "${SHARED_FILES[@]}"
+    print_array_section "Shared file tombstones:" "${SHARED_FILE_TOMBSTONES[@]+"${SHARED_FILE_TOMBSTONES[@]}"}"
 
     if [[ ${#upstream_branches[@]} -gt 0 ]]; then
         local upstream_missing=()
@@ -237,6 +238,17 @@ sync_shared_command() {
     echo "Source branch: $BOOTSTRAP_SOURCE_BRANCH"
     print_section "Target branches:" "${target_branches[@]}"
 
+    for file in "${SHARED_FILE_TOMBSTONES[@]+"${SHARED_FILE_TOMBSTONES[@]}"}"; do
+        case "$file" in
+            ""|/*|..|../*|*/..|*/../*)
+                die "Shared file tombstone must be a repository-relative path: $file"
+                ;;
+        esac
+        if [[ -e "$source_worktree/$file" || -L "$source_worktree/$file" ]]; then
+            die "Shared file tombstone still exists on source branch: $file"
+        fi
+    done
+
     if [[ $apply -eq 1 || $push -eq 1 ]]; then
         git_worktree_transaction_require_clean || die "Working tree must be clean before using --apply or --push."
     fi
@@ -269,6 +281,18 @@ sync_shared_command() {
                     changed_files+=("$file")
                 fi
             elif [[ ! -f "$worktree/$file" ]] || ! cmp -s "$source_worktree/$file" "$worktree/$file"; then
+                changed_files+=("$file")
+            fi
+        done
+
+        for file in "${SHARED_FILE_TOMBSTONES[@]+"${SHARED_FILE_TOMBSTONES[@]}"}"; do
+            if [[ -d "$worktree/$file" && ! -L "$worktree/$file" ]]; then
+                die "Shared file tombstone points to a directory on $branch: $file"
+            fi
+            if [[ -e "$worktree/$file" || -L "$worktree/$file" ]]; then
+                if [[ $apply -eq 1 ]]; then
+                    rm -f "$worktree/$file"
+                fi
                 changed_files+=("$file")
             fi
         done
