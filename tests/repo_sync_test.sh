@@ -84,6 +84,8 @@ assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
 assert_contains "$status_output" "scripts/image_metrics.sh"
 assert_contains "$status_output" "scripts/docker_hub_cleanup.sh"
 assert_contains "$status_output" "config/image-size-baseline.tsv"
+assert_contains "$status_output" "Shared file tombstones:"
+assert_contains "$status_output" ".semaphore/cleanup.yml"
 
 dry_run_output="$(bash "$SCRIPT_PATH" bootstrap-version php85)"
 assert_contains "$dry_run_output" "php85"
@@ -302,8 +304,10 @@ assert_file_contains "$MAINTENANCE_PATH" 'should automatically delete merged pul
 assert_file_contains "$DECISIONS_PATH" 'manual GitHub Actions workflow'
 assert_file_contains "$README_PATH" 'manual GitHub Actions cleanup workflow'
 assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/repo_sync.sh sync-shared --push'
+assert_file_contains "$MAINTENANCE_PATH" 'SHARED_FILE_TOMBSTONES'
 assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
 assert_file_contains "$DECISIONS_PATH" 'Automate Repeatable External Effects Behind Apply Gates'
+assert_file_contains "$DECISIONS_PATH" 'Shared-file propagation includes explicit deletion policy.'
 
 assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
@@ -350,6 +354,7 @@ assert_file_contains "$MAINTENANCE_PATH" 'SERVICE_PHPFPM_OPTS: "-R"'
 assert_file_contains "$MAINTENANCE_PATH" 'Do not use this mode with a rootful Docker daemon.'
 assert_file_contains "$DECISIONS_PATH" '## Use One Image For Rootless Docker'
 assert_file_contains "$AGENTS_PATH" 'Treat the documented maintenance interfaces as authoritative'
+assert_file_contains "$AGENTS_PATH" 'SHARED_FILE_TOMBSTONES'
 assert_file_contains "$AGENTS_PATH" 'PHP branches are preflight-only'
 assert_file_contains "$MAINTENANCE_PATH" '## Workflow Change Gate'
 assert_file_contains "$MAINTENANCE_PATH" 'Version-like Git tags are the only Docker Hub publish refs.'
@@ -674,12 +679,22 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
     assert_contains "$bootstrap_apply_output" "Created php85"
     git show-ref --verify --quiet refs/heads/php85
 
+    git switch --quiet php85
+    mkdir -p .semaphore
+    printf '%s\n' 'stale cleanup workflow' >.semaphore/cleanup.yml
+    git add .semaphore/cleanup.yml
+    git -c commit.gpgsign=false commit -m "test stale shared file" >/dev/null
+    git switch latest >/dev/null 2>&1
+
     git remote add origin "$TMP_REPO_REMOTE"
     git push origin latest php85 >/dev/null 2>&1
 
     printf '\nShared workflow update.\n' >>README.md
     git add README.md
     git -c commit.gpgsign=false commit -m "test shared update" >/dev/null
+
+    sync_preview_output="$(bash scripts/repo_sync.sh sync-shared php85)"
+    assert_contains "$sync_preview_output" '.semaphore/cleanup.yml'
 
     if sync_push_drift_output="$(bash scripts/repo_sync.sh sync-shared --push php85 2>&1)"; then
         echo "Expected sync-shared --push to reject remaining shared-file drift." >&2
@@ -697,6 +712,20 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
         exit 1
     }
     assert_contains "$(git show php85:README.md)" 'Shared workflow update.'
+    if git cat-file -e php85:.semaphore/cleanup.yml 2>/dev/null; then
+        echo "Expected sync-shared --apply to remove configured shared-file tombstones." >&2
+        exit 1
+    fi
+
+    mkdir -p .semaphore
+    printf '%s\n' 'conflicting cleanup workflow' >.semaphore/cleanup.yml
+    git add .semaphore/cleanup.yml
+    git -c commit.gpgsign=false commit -m "test conflicting tombstone" >/dev/null
+    if tombstone_conflict_output="$(bash scripts/repo_sync.sh sync-shared php85 2>&1)"; then
+        echo "Expected sync-shared to reject a tombstoned path that still exists on latest." >&2
+        exit 1
+    fi
+    assert_contains "$tombstone_conflict_output" 'Shared file tombstone still exists on source branch: .semaphore/cleanup.yml'
 
     if bash -c '
         set -euo pipefail

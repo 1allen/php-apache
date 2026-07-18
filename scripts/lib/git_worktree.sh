@@ -6,11 +6,14 @@ GIT_WORKTREE_PATH=""
 GIT_WORKTREE_CREATED_BRANCHES=()
 
 git_worktree_transaction_begin() {
+    local worktree_root
+
     GIT_WORKTREE_REPOSITORY="$1"
     [[ -n "$GIT_WORKTREE_ROOT" ]] && return
 
     git -C "$GIT_WORKTREE_REPOSITORY" worktree prune >/dev/null 2>&1 || true
-    GIT_WORKTREE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/php-apache-sync.XXXXXX")"
+    worktree_root="$(mktemp -d "${TMPDIR:-/tmp}/php-apache-sync.XXXXXX")"
+    GIT_WORKTREE_ROOT="$(cd "$worktree_root" && pwd -P)"
 }
 
 git_worktree_transaction_require_clean() {

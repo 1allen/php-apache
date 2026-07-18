@@ -155,6 +155,13 @@ drift remains before atomically pushing the complete target branch set. A
 missing, divergent, or unsynchronized branch must fail the push rather than
 silently producing a partial rollout.
 
+Shared-file propagation includes explicit deletion policy. `SHARED_FILES`
+copies maintained paths from `latest`; `SHARED_FILE_TOMBSTONES` records retired
+paths that must be absent from `latest` and removed from supported PHP branches.
+Keeping both policies in `config/php-branches.conf` lets the same dry-run,
+apply, verification, and atomic-push gates handle additions, updates, and
+deletions without branch-by-branch cleanup commands.
+
 Keep destructive Docker Hub retirement in `scripts/docker_hub_cleanup.sh`, not
 in the read-only image metrics module or CI publication path. Its default mode
 inventories the repository and previews the exact retired tags. `--apply`

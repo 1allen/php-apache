@@ -7,8 +7,8 @@ files.
 ## Sources Of Truth
 
 - `config/php-branches.conf`: supported PHP branches, legacy branches, shared
-  files, provider-neutral Docker image defaults, publish tag pattern, and
-  accepted PHP extension installer image refs.
+  files and tombstones, provider-neutral Docker image defaults, publish tag
+  pattern, and accepted PHP extension installer image refs.
 - `scripts/ci/docker_build.sh`: CI-provider-neutral Docker build and publish
   behavior. Semaphore is only the current adapter.
 - `scripts/repo_sync.sh`: shared-file preview, local synchronization commits,
