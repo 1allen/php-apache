@@ -20,7 +20,7 @@ MAINTENANCE_PATH="$ROOT_DIR/docs/maintenance.md"
 DECISIONS_PATH="$ROOT_DIR/docs/decisions.md"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
 SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
-SEMAPHORE_CLEANUP_PATH="$ROOT_DIR/.semaphore/cleanup.yml"
+GITHUB_CLEANUP_PATH="$ROOT_DIR/.github/workflows/docker-hub-cleanup.yml"
 RELEASE_REF_PATH="$ROOT_DIR/scripts/lib/release_ref.sh"
 IMAGE_CONTRACT_PATH="$ROOT_DIR/scripts/lib/image_contract.sh"
 GIT_WORKTREE_PATH="$ROOT_DIR/scripts/lib/git_worktree.sh"
@@ -75,7 +75,7 @@ assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
 assert_contains "$status_output" ".semaphore/semaphore.yml"
 assert_contains "$status_output" ".semaphore/publish.yml"
-assert_contains "$status_output" ".semaphore/cleanup.yml"
+assert_contains "$status_output" ".github/workflows/docker-hub-cleanup.yml"
 assert_contains "$status_output" ".dockerignore"
 assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
@@ -295,9 +295,9 @@ assert_file_contains "$DOCS_README_PATH" 'config/image-size-baseline.tsv'
 assert_file_contains "$DOCS_README_PATH" 'scripts/docker_hub_cleanup.sh'
 assert_file_contains "$MAINTENANCE_PATH" 'pre-cleanup Docker Hub snapshot'
 assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/docker_hub_cleanup.sh --apply'
-assert_file_contains "$MAINTENANCE_PATH" 'clean up retired Docker Hub tags'
-assert_file_contains "$DECISIONS_PATH" 'manual Semaphore promotion'
-assert_file_contains "$README_PATH" 'manual Semaphore cleanup promotion'
+assert_file_contains "$MAINTENANCE_PATH" 'Docker Hub cleanup workflow'
+assert_file_contains "$DECISIONS_PATH" 'manual GitHub Actions workflow'
+assert_file_contains "$README_PATH" 'manual GitHub Actions cleanup workflow'
 assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/repo_sync.sh sync-shared --push'
 assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
 assert_file_contains "$DECISIONS_PATH" 'Automate Repeatable External Effects Behind Apply Gates'
@@ -395,29 +395,29 @@ assert_file_contains "$SEMAPHORE_PUBLISH_PATH" 'Warning: release metrics report 
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '*run_docker_ci'
 assert_file_not_contains "$SEMAPHORE_PUBLISH_PATH" '&run_docker_ci'
 
-[[ -f "$SEMAPHORE_CLEANUP_PATH" ]] || {
-    echo "Missing Semaphore cleanup pipeline: $SEMAPHORE_CLEANUP_PATH" >&2
+[[ -f "$GITHUB_CLEANUP_PATH" ]] || {
+    echo "Missing GitHub Actions cleanup workflow: $GITHUB_CLEANUP_PATH" >&2
     exit 1
 }
 
-assert_file_contains "$SEMAPHORE_PATH" 'name: clean up retired Docker Hub tags'
-assert_file_contains "$SEMAPHORE_PATH" 'pipeline_file: cleanup.yml'
-assert_file_contains "$SEMAPHORE_CLEANUP_PATH" 'name: php-apache Docker Hub cleanup pipeline'
-assert_file_contains "$SEMAPHORE_CLEANUP_PATH" 'name: delete retired Docker Hub tags'
-assert_file_contains "$SEMAPHORE_CLEANUP_PATH" 'test "${SEMAPHORE_GIT_BRANCH:-}" = latest'
-assert_file_contains "$SEMAPHORE_CLEANUP_PATH" 'DOCKER_HUB_TOKEN="${DOCKER_PASSWORD:-}" bash scripts/docker_hub_cleanup.sh --apply'
-assert_file_contains "$SEMAPHORE_CLEANUP_PATH" 'dockerhub-1allen'
-assert_file_not_contains "$SEMAPHORE_CLEANUP_PATH" 'auto_promote'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'workflow_dispatch:'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'contents: read'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'cancel-in-progress: false'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'test "$GITHUB_REF" = refs/heads/latest'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}'
+assert_file_contains "$GITHUB_CLEANUP_PATH" 'bash scripts/docker_hub_cleanup.sh --apply'
+assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'push:'
+assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'pull_request:'
+assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'schedule:'
+assert_file_not_contains "$SEMAPHORE_PATH" 'pipeline_file: cleanup.yml'
 
-ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" "$SEMAPHORE_CLEANUP_PATH" <<'RUBY'
+ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" <<'RUBY'
 require "yaml"
 
 build_config = YAML.load_file(ARGV.fetch(0))
 publish_config = YAML.load_file(ARGV.fetch(1))
-cleanup_config = YAML.load_file(ARGV.fetch(2))
 build_blocks = build_config.fetch("blocks")
 publish_blocks = publish_config.fetch("blocks")
-cleanup_blocks = cleanup_config.fetch("blocks")
 smoke = build_blocks.find { |block| block["name"] == "build image" } or abort "Missing build image block"
 preflight = build_blocks.find { |block| block["name"] == "verify release source" } or abort "Missing verify release source block"
 publish = publish_blocks.find { |block| block["name"] == "publish image" } or abort "Missing publish image block"
@@ -437,9 +437,6 @@ abort "Publish promotion must target publish.yml" unless promotion["pipeline_fil
 unless promotion.fetch("auto_promote").fetch("when") == "result = 'passed' AND pull_request !~ '^.+$' AND tag =~ '^[0-9]+[.][0-9]+([.][0-9]+)?$'"
     abort "Publish promotion must only run after passed version tags"
 end
-cleanup_promotion = build_config.fetch("promotions").find { |item| item["name"] == "clean up retired Docker Hub tags" } or abort "Missing Docker Hub cleanup promotion"
-abort "Cleanup promotion must target cleanup.yml" unless cleanup_promotion["pipeline_file"] == "cleanup.yml"
-abort "Cleanup promotion must never auto-promote" if cleanup_promotion.key?("auto_promote")
 abort "Publish image block must explicitly define no dependencies" unless publish.fetch("dependencies") == []
 abort "Publish image block must set publish mode" unless publish.fetch("task").fetch("env_vars").any? { |env| env["name"] == "CI_DOCKER_MODE" && env["value"] == "build-publish" }
 publish_commands = publish.fetch("task").fetch("jobs").fetch(0).fetch("commands")
@@ -449,15 +446,6 @@ unless publish.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["na
 end
 abort "Scan block must depend on publish image" unless scan.fetch("dependencies") == ["publish image"]
 abort "Scan block must not receive secrets" if scan.fetch("task", {}).key?("secrets")
-abort "Cleanup pipeline must have exactly one block" unless cleanup_blocks.size == 1
-cleanup = cleanup_blocks.fetch(0)
-abort "Cleanup block must explicitly define no dependencies" unless cleanup.fetch("dependencies") == []
-cleanup_commands = cleanup.fetch("task").fetch("jobs").fetch(0).fetch("commands")
-abort "Cleanup must reject non-latest workflows" unless cleanup_commands.any? { |command| command.include?('test "${SEMAPHORE_GIT_BRANCH:-}" = latest') }
-abort "Cleanup must call the maintained apply interface" unless cleanup_commands.any? { |command| command == 'DOCKER_HUB_TOKEN="${DOCKER_PASSWORD:-}" bash scripts/docker_hub_cleanup.sh --apply' }
-unless cleanup.fetch("task", {}).fetch("secrets", []).any? { |secret| secret["name"] == "dockerhub-1allen" }
-    abort "Cleanup block must receive dockerhub-1allen secret"
-end
 RUBY
 
 if grep -Eq "name: (BUILDER_IMAGE|DOCKER_USERNAME|IMAGE_NAME|DOCKER_BUILDKIT)" "$SEMAPHORE_PATH"; then
