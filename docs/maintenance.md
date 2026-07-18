@@ -381,6 +381,12 @@ size-only when `--build-metrics` is omitted. The post-push combined report is
 non-blocking: a Docker Hub reporting delay or outage emits a warning without
 changing the completed publication result or preventing the scan.
 
+Build timings remain available in the Semaphore publish-job log. The temporary
+TSV joins timings to registry metrics within that job and is not retained as a
+separate historical artifact. Run `bash scripts/image_metrics.sh` at any time
+for current compressed sizes and baseline comparisons; consult the publish-job
+log for the timing report associated with a particular release.
+
 The default report reads supported consumer `X.Y` tags and compares each PHP
 line with the immutable pre-cleanup Docker Hub snapshot in
 `config/image-size-baseline.tsv`. The snapshot was queried on 2026-07-16 before
@@ -398,11 +404,11 @@ do not mix the two metrics in one comparison.
 
 ### Legacy Docker Tag Cleanup
 
-The branch-named Docker tags `php73`, `php74`, and `php80` through `php85`,
-together with the floating `latest` tag, predate the tag-only publishing policy.
-They are not consumer interfaces. After the version-tag rollout has succeeded
-and `scripts/image_metrics.sh` can read every supported `X.Y` image, remove
-those legacy tags from Docker Hub.
+The retired Docker Hub tags have been removed. These were the branch-named tags
+`php73`, `php74`, and `php80` through `php85`, together with the floating
+`latest` tag. They predated the tag-only publishing policy and were not consumer
+interfaces. The maintained cleanup interface now audits and enforces their
+continued absence without touching version-like consumer tags.
 
 Use the maintained cleanup interface to read back the exact inventory and
 preview its policy-derived deletion set:
@@ -514,13 +520,19 @@ still exists solely from an unpruned local `origin/*` ref.
    A missing, divergent, or unsynchronized branch fails the push instead of
    leaving a partial rollout. Semaphore runs the release-source preflight but
    does not build or publish Docker images for branch refs.
-8. Preview and apply Git tag updates for consumer images such as
+8. When release image inputs changed, or an explicit rebuild is intended,
+   preview and apply Git tag updates for consumer images such as
    `1allen/php-apache:8.2`:
 
    ```bash
    bash scripts/tags_update.sh
    bash scripts/tags_update.sh --apply
    ```
+
+   Do not move version tags after documentation, test, or CI-adapter-only changes.
+   In those cases, branch synchronization and its required checks complete the
+   rollout. Version-tag movement is a publishing decision, not an automatic
+   consequence of advancing the PHP source branches.
 
    Each pushed version tag runs one cached build in the protected publish
    pipeline, publishes that version-like Docker tag, and then runs the advisory
