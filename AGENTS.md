@@ -12,7 +12,7 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
 - Make shared maintenance edits on `latest` first.
 - Treat `config/php-branches.conf` as the source of truth for supported PHP
   branches, shared files, provider-neutral Docker image defaults, publish tag
-  patterns, and release behavior.
+  patterns, accepted PHP extension installer image refs, and release behavior.
 - Keep `AGENTS.md`, `README.md`, `docs/README.md`, `docs/maintenance.md`,
   `docs/decisions.md`, scripts, config, and CI changes in `SHARED_FILES` when
   they should propagate to PHP version branches.
@@ -25,8 +25,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   builder/runtime ABI compatibility pins.
 - `imagick` is a bundled feature. Keep the explicit pinned PECL source build so
   it links against custom ImageMagick under `/usr/local`.
-- Keep application-specific PHP extensions, including GMP, and general-purpose
-  extension installers in downstream images.
+- Keep application-specific PHP extensions, including GMP, in downstream
+  images. Keep `install-php-extensions` in the base image as a supported
+  downstream customization interface.
 - Keep `docker-php-ext-configure imagick --with-imagick=/usr/local`,
   SHA-256 verification for downloaded ImageMagick and PECL `imagick` archives,
   and `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` or equivalent configure-time

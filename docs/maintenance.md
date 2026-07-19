@@ -262,23 +262,19 @@ updates.
 ## Downstream Images
 
 The base image intentionally does not bundle application-specific PHP
-extensions or a general-purpose extension installer. A downstream image can
-bring its preferred installer explicitly:
+extensions. It does retain `install-php-extensions` as a supported downstream
+customization interface:
 
 ```Dockerfile
-FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
-
 FROM 1allen/php-apache:8.5
-
-COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN install-php-extensions grpc redis protobuf
 ```
 
-Pin the installer image and extension versions downstream when reproducibility
-matters. Keeping that choice in the application image prevents unrelated PHP
-extensions and installer release behavior from becoming part of this base
-image's contract.
+Pin extension versions downstream when reproducibility matters. Keeping the
+extensions themselves in the application image prevents unrelated extension
+dependencies and release behavior from becoming part of this base image's
+contract.
 
 Install optional operating-system tools by application capability rather than
 growing the shared base image:
