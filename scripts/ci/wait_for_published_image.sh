@@ -19,19 +19,22 @@ WAIT_FOR_IMAGE=false
 POLL_INTERVAL_SECONDS=15
 TIMEOUT_SECONDS=1800
 UPDATED_AFTER=""
+DIGEST_FILE=""
 TAG=""
 
 usage() {
     cat <<'EOF'
 Usage:
   bash scripts/ci/wait_for_published_image.sh [--wait]
-      [--updated-after EPOCH] [--interval SECONDS] [--timeout SECONDS] tag
+      [--digest-file PATH] [--updated-after EPOCH]
+      [--interval SECONDS] [--timeout SECONDS] tag
 
 Checks whether Docker Hub exposes the requested version-like image tag. With
 --wait, polls until the tag is ready or the timeout expires. --updated-after
 also requires Docker Hub's last_updated timestamp to be newer than the supplied
 Unix epoch, preventing a previous image at a reused tag from satisfying a new
-publication check.
+publication check. --digest-file writes the immutable manifest digest after a
+successful check.
 
 Exit codes:
   0  the requested published image is ready
@@ -100,6 +103,13 @@ check_published_image() {
         return 2
     fi
 
+    if [[ -n "$DIGEST_FILE" ]]; then
+        if [[ "$DIGEST_FILE" == */* ]]; then
+            [[ -d "${DIGEST_FILE%/*}" ]] \
+                || die "Digest output directory does not exist: ${DIGEST_FILE%/*}"
+        fi
+        printf '%s\n' "$digest" >"$DIGEST_FILE"
+    fi
     echo "Published image ready: $DOCKER_USERNAME/$IMAGE_NAME:$TAG ($digest)"
 }
 
@@ -112,6 +122,12 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || die "--updated-after requires an epoch"
             UPDATED_AFTER="$2"
             require_nonnegative_integer --updated-after "$UPDATED_AFTER"
+            shift
+            ;;
+        --digest-file)
+            [[ $# -ge 2 ]] || die "--digest-file requires a path"
+            DIGEST_FILE="$2"
+            [[ -n "$DIGEST_FILE" ]] || die "--digest-file requires a non-empty path"
             shift
             ;;
         --interval)

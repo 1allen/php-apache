@@ -69,7 +69,9 @@ critical and high findings plus SARIF associated with the matching `phpXX`
 source branch as additional review surfaces rather than replacing the
 provider-neutral Trivy scan. Authenticate Scout with a dedicated read-only
 `DOCKER_SCOUT_TOKEN`; do not expose the deletion-capable Docker Hub cleanup
-credential to third-party analysis actions.
+credential to third-party analysis actions. Capture Docker Hub's manifest
+digest and scan the immutable digest reference so a republished tag cannot
+change the target after the readiness check.
 
 ## Measure Registry-Compressed Image Size
 

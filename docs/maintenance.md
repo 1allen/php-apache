@@ -257,7 +257,8 @@ GitHub Actions also runs the advisory `Published image analysis` workflow for
 version-like tag pushes. It waits for the same Semaphore release status through
 `scripts/ci/release_status.sh --wait`, then uses
 `scripts/ci/wait_for_published_image.sh` to wait until Docker Hub exposes an
-image updated after the tag-push event. It analyzes that exact public tag with
+image updated after the tag-push event. The workflow captures the registry
+manifest digest and analyzes the immutable `name@sha256:...` reference with
 Dive and Docker Scout without rebuilding or publishing it. Dive reports layer
 efficiency in the workflow log. Scout reports fixable critical and high
 vulnerabilities and base-image recommendations in the job summary, and uploads

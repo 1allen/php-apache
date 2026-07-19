@@ -175,9 +175,12 @@ chmod +x "$TMP_PUBLISHED_IMAGE/bin/curl"
 published_image_output="$(
     CURL_BIN="$TMP_PUBLISHED_IMAGE/bin/curl" \
     MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
-    bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" --updated-after 1784500000 8.5
+    bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" \
+        --digest-file "$TMP_PUBLISHED_IMAGE/digest" \
+        --updated-after 1784500000 8.5
 )"
 assert_contains "$published_image_output" 'Published image ready: 1allen/php-apache:8.5'
+assert_file_contains "$TMP_PUBLISHED_IMAGE/digest" 'sha256:test-1'
 
 rm -f "$TMP_PUBLISHED_IMAGE/count"
 published_image_output="$(
@@ -574,6 +577,33 @@ assert_file_not_contains "$SEMAPHORE_PATH" 'pipeline_file: cleanup.yml'
     exit 1
 }
 
+ruby - "$GITHUB_IMAGE_ANALYSIS_PATH" <<'RUBY'
+require "yaml"
+
+workflow = YAML.load_file(ARGV.fetch(0))
+triggers = workflow["on"] || workflow[true] or abort "Missing workflow triggers"
+abort "Missing tag push trigger" unless triggers.key?("push")
+abort "Missing workflow_dispatch trigger" unless triggers.key?("workflow_dispatch")
+abort "Missing analyze job" unless workflow.fetch("jobs").key?("analyze")
+
+uses = []
+walk = lambda do |value|
+    case value
+    when Hash
+        value.each do |key, child|
+            uses << child if key == "uses"
+            walk.call(child)
+        end
+    when Array
+        value.each { |child| walk.call(child) }
+    end
+end
+walk.call(workflow)
+abort "Workflow has no actions" if uses.empty?
+invalid = uses.reject { |ref| ref.is_a?(String) && ref.match?(%r{\A[^@\s]+@[0-9a-f]{40}\z}) }
+abort "Actions must use full commit pins: #{invalid.join(", ")}" unless invalid.empty?
+RUBY
+
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'workflow_dispatch:'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "tags:"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "- '*.*'"
@@ -585,9 +615,12 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source_branch=$(release_ref_
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha=$(git rev-parse HEAD)'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "if: github.event_name == 'push'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/release_status.sh --wait'
-assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'wait_args=(--wait)'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'RELEASE_TAG: ${{ steps.image.outputs.tag }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'wait_args=(--wait --digest-file "$DIGEST_FILE")'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/wait_for_published_image.sh'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" '--updated-after "$PUSHED_AT"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" '--digest-file "$DIGEST_FILE"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "ref=$IMAGE_REPOSITORY@$digest"'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@481412c8b8de36d0f79e85aa382c60397466feb6'
@@ -596,6 +629,7 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dockerhub-user: ${{ steps.im
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dockerhub-password: ${{ secrets.DOCKER_SCOUT_TOKEN }}'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-severities: critical,high'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-fixed: true'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'write-comment: false'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sarif-file: docker-scout.sarif'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'id: sarif'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a'
