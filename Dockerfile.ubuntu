@@ -1,7 +1,5 @@
 # syntax=docker/dockerfile:1
 
-FROM mlocati/php-extension-installer:latest AS php-extension-installer
-
 FROM spritsail/debian-builder AS imagemagick-builder
 
 # https://github.com/ImageMagick/ImageMagick/releases
@@ -51,7 +49,6 @@ ENV APPLICATION_UID=${UID} \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/
-COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 WORKDIR /tmp
 
@@ -76,7 +73,6 @@ RUN set -eux; \
         fi; \
     fi; \
     export MAKEFLAGS="-j$(nproc)"; \
-    install-php-extensions gmp; \
     curl -fsSL --retry 5 --retry-connrefused --connect-timeout 15 \
         "https://pecl.php.net/get/imagick-${IMAGICK_VERSION}.tgz" \
         -o imagick.tgz; \
