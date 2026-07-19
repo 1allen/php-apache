@@ -11,6 +11,7 @@ DOCKER_HUB_CLEANUP_SCRIPT_PATH="$ROOT_DIR/scripts/docker_hub_cleanup.sh"
 IMAGE_METRICS_SCRIPT_PATH="$ROOT_DIR/scripts/image_metrics.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
+CI_RELEASE_STATUS_SCRIPT_PATH="$ROOT_DIR/scripts/ci/release_status.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 IMAGE_SIZE_BASELINE_PATH="$ROOT_DIR/config/image-size-baseline.tsv"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
@@ -70,6 +71,64 @@ source "$IMAGE_CONTRACT_PATH"
     exit 1
 }
 
+[[ -x "$CI_RELEASE_STATUS_SCRIPT_PATH" ]] || {
+    echo "Missing executable release status script: $CI_RELEASE_STATUS_SCRIPT_PATH" >&2
+    exit 1
+}
+
+test_temp_dir TMP_RELEASE_STATUS release-status
+mkdir -p "$TMP_RELEASE_STATUS/bin"
+cat > "$TMP_RELEASE_STATUS/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${1:-}" == "api" ]] || exit 64
+case "${MOCK_RELEASE_STATE:-success}" in
+    missing)
+        printf '%s\n' '{"statuses":[]}'
+        ;;
+    *)
+        printf '{"statuses":[{"context":"ci/semaphoreci/tag: php-apache build pipeline","state":"%s","target_url":"https://ci.example/release"}]}\n' \
+            "${MOCK_RELEASE_STATE:-success}"
+        ;;
+esac
+EOF
+chmod +x "$TMP_RELEASE_STATUS/bin/gh"
+
+release_status_output="$(
+    GITHUB_REPOSITORY=1allen/php-apache \
+    GH_BIN="$TMP_RELEASE_STATUS/bin/gh" \
+    bash "$CI_RELEASE_STATUS_SCRIPT_PATH" HEAD
+)"
+assert_contains "$release_status_output" $'HEAD\tsuccess\thttps://ci.example/release'
+
+set +e
+release_status_output="$(
+    GITHUB_REPOSITORY=1allen/php-apache \
+    GH_BIN="$TMP_RELEASE_STATUS/bin/gh" \
+    MOCK_RELEASE_STATE=pending \
+    bash "$CI_RELEASE_STATUS_SCRIPT_PATH" HEAD
+)"
+release_status_exit=$?
+set -e
+[[ "$release_status_exit" -eq 2 ]] || {
+    echo "Expected pending release status to exit 2, got $release_status_exit." >&2
+    exit 1
+}
+assert_contains "$release_status_output" $'HEAD\tpending\thttps://ci.example/release'
+
+set +e
+GITHUB_REPOSITORY=1allen/php-apache \
+GH_BIN="$TMP_RELEASE_STATUS/bin/gh" \
+MOCK_RELEASE_STATE=failure \
+bash "$CI_RELEASE_STATUS_SCRIPT_PATH" HEAD >/dev/null
+release_status_exit=$?
+set -e
+[[ "$release_status_exit" -eq 1 ]] || {
+    echo "Expected failed release status to exit 1, got $release_status_exit." >&2
+    exit 1
+}
+
 status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
@@ -81,6 +140,7 @@ assert_contains "$status_output" "AGENTS.md"
 assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
 assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
+assert_contains "$status_output" "scripts/ci/release_status.sh"
 assert_contains "$status_output" "scripts/image_metrics.sh"
 assert_contains "$status_output" "scripts/docker_hub_cleanup.sh"
 assert_contains "$status_output" "config/image-size-baseline.tsv"

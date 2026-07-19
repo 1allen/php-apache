@@ -10,6 +10,8 @@ files.
   files, provider-neutral Docker image defaults, and publish tag pattern.
 - `scripts/ci/docker_build.sh`: CI-provider-neutral Docker build and publish
   behavior. Semaphore is only the current adapter.
+- `scripts/ci/release_status.sh`: current and waiting status for supported
+  publish pipelines through their GitHub commit-status context.
 - `scripts/repo_sync.sh`: shared-file preview, local synchronization commits,
   verified atomic branch push, and version-branch bootstrap behavior.
 - `scripts/docker_hub_cleanup.sh`: dry-run inventory and allowlisted retirement
