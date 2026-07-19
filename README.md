@@ -154,6 +154,14 @@ bash scripts/repo_sync.sh sync-shared --apply
 bash scripts/repo_sync.sh sync-shared --push
 ```
 
+After moving supported version tags, check once or wait for every publish
+pipeline to finish:
+
+```bash
+bash scripts/ci/release_status.sh
+bash scripts/ci/release_status.sh --wait
+```
+
 Use `bash scripts/docker_hub_cleanup.sh` to audit retired branch-named and
 floating Docker Hub tags. Its explicit `--apply` mode deletes only the
 policy-derived retired set and verifies the result. When the Docker Hub
