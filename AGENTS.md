@@ -35,7 +35,8 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   YAML should be a thin provider adapter. Semaphore is current, not permanent.
 - Treat the documented maintenance interfaces as authoritative before designing
   any workflow. Map the requested outcome to `scripts/repo_sync.sh`,
-  `scripts/ci/docker_build.sh`, `scripts/ci/trivy_scan.sh`,
+  `scripts/ci/docker_build.sh`, `scripts/ci/release_status.sh`,
+  `scripts/ci/trivy_scan.sh`,
   `scripts/tags_update.sh`, `scripts/image_metrics.sh`,
   `scripts/docker_hub_cleanup.sh`, and the branch flow in
   `docs/maintenance.md` first.
