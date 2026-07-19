@@ -313,6 +313,7 @@ machinery:
 | Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply\|--push]` |
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
+| Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |
@@ -498,7 +499,12 @@ still exists solely from an unpruned local `origin/*` ref.
    ```bash
    bash scripts/tags_update.sh
    bash scripts/tags_update.sh --apply
+   bash scripts/ci/release_status.sh --wait
    ```
+
+   The status command checks supported version tags by default. It returns `0`
+   only when all publish pipelines succeed, `1` when a release fails, `2` for
+   pending or timed-out releases, and `3` when status lookup itself fails.
 
    Do not move version tags after documentation, test, or CI-adapter-only changes.
    In those cases, branch synchronization and its required checks complete the
