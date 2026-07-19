@@ -304,6 +304,13 @@ assert_file_contains "$README_PATH" 'manual GitHub Actions cleanup workflow'
 assert_file_contains "$MAINTENANCE_PATH" 'bash scripts/repo_sync.sh sync-shared --push'
 assert_file_contains "$DECISIONS_PATH" 'Measure Registry-Compressed Image Size'
 assert_file_contains "$DECISIONS_PATH" 'Automate Repeatable External Effects Behind Apply Gates'
+assert_file_contains "$README_PATH" 'Shared maintenance commits do not require rebuilding or moving these tags'
+assert_file_contains "$MAINTENANCE_PATH" 'The retired Docker Hub tags have been removed'
+assert_file_contains "$MAINTENANCE_PATH" 'Build timings remain available in the Semaphore publish-job log'
+assert_file_contains "$MAINTENANCE_PATH" 'Do not move version tags after documentation, test, or CI-adapter-only changes'
+assert_file_contains "$DECISIONS_PATH" 'Version tags identify published image revisions, not every maintenance commit'
+assert_file_contains "$DECISIONS_PATH" '1,991 seconds to 929 seconds'
+assert_file_contains "$AGENTS_PATH" 'Do not move version tags after documentation, test, or CI-adapter-only changes'
 
 assert_file_contains "$DOCKERFILE_PATH" "ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
