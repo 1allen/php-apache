@@ -209,6 +209,13 @@ requirement, a documented gap in the current interface, and explicit approval.
 When the current behavior is unclear, inspect the implementation and ask rather
 than infer a replacement process.
 
+Changes to `scripts/lib/image_contract.sh` redefine the public image contract
+and therefore require a distinct approval at delivery time. Branch propagation
+and tag movement validate candidate Dockerfiles and refuse a changed contract
+policy by default. The explicit `--approve-contract-change` override records
+that the user reviewed and accepted that exact policy diff; it must never be
+inferred from approval of adjacent maintenance work.
+
 This preserves repository-specific operational knowledge, avoids competing
 release paths, and keeps future agents and maintainers from turning documented
 automation back into manual coordination.
