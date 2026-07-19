@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
 
+ARG PHP_EXTENSION_INSTALLER_IMAGE=ghcr.io/mlocati/php-extension-installer:latest
+FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer
+
 FROM spritsail/debian-builder:buster AS imagemagick-builder
 
 # https://github.com/ImageMagick/ImageMagick/releases
@@ -55,6 +58,7 @@ ENV APPLICATION_UID=${UID} \
     PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/
+COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 WORKDIR /tmp
 
@@ -107,6 +111,7 @@ RUN set -eux; \
 WORKDIR /home/application
 
 RUN set -eux; \
+    test -x /usr/local/bin/install-php-extensions; \
     usermod -u "$UID" application; \
     groupmod -g "$GID" application; \
     chown -R application: /home/application
