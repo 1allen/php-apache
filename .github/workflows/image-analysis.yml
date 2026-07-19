@@ -1,0 +1,109 @@
+name: Published image analysis
+
+on:
+  push:
+    tags:
+      - '*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version tag to analyze (for example, 8.5)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: image-analysis-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Analyze published image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - name: Resolve published image
+        id: image
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          source config/php-branches.conf
+          if [[ ! "$REQUESTED_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
+            echo "Refusing non-version tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "namespace=$DEFAULT_DOCKER_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "ref=$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME:$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+      - name: Wait for Semaphore preflight
+        run: bash scripts/ci/release_status.sh --wait "${{ steps.image.outputs.tag }}"
+      - name: Wait for Docker Hub publication
+        env:
+          PUSHED_AT: ${{ github.event.repository.pushed_at }}
+        run: |
+          wait_args=(--wait)
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            wait_args+=(--updated-after "$PUSHED_AT")
+          fi
+          bash scripts/ci/wait_for_published_image.sh \
+            "${wait_args[@]}" "${{ steps.image.outputs.tag }}"
+      - name: Analyze image layers with Dive
+        id: dive
+        continue-on-error: true
+        uses: MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e # v2.0.1
+        with:
+          image: ${{ steps.image.outputs.ref }}
+      - name: Require Docker Scout credentials
+        env:
+          DOCKER_SCOUT_TOKEN: ${{ secrets.DOCKER_SCOUT_TOKEN }}
+        run: test -n "$DOCKER_SCOUT_TOKEN"
+      - name: Analyze fixable vulnerabilities with Docker Scout
+        id: scout
+        continue-on-error: true
+        uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1
+        with:
+          command: cves,recommendations
+          dockerhub-user: ${{ steps.image.outputs.namespace }}
+          dockerhub-password: ${{ secrets.DOCKER_SCOUT_TOKEN }}
+          image: registry://${{ steps.image.outputs.ref }}
+          only-severities: critical,high
+          only-fixed: true
+          sarif-file: docker-scout.sarif
+          summary: true
+          write-comment: false
+      - name: Upload Docker Scout results
+        id: sarif
+        if: always() && hashFiles('docker-scout.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: docker-scout.sarif
+      - name: Summarize advisory analysis
+        if: always()
+        env:
+          DIVE_OUTCOME: ${{ steps.dive.outcome }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+          SARIF_OUTCOME: ${{ steps.sarif.outcome }}
+          SCOUT_OUTCOME: ${{ steps.scout.outcome }}
+        run: |
+          {
+            echo '## Published image advisory analysis'
+            echo
+            echo "- Image: \`$IMAGE_REF\`"
+            echo "- Dive step: $DIVE_OUTCOME"
+            echo "- Docker Scout step: $SCOUT_OUTCOME"
+            echo "- SARIF upload step: $SARIF_OUTCOME"
+            echo
+            echo 'Dive details are available in its step log; Scout findings are shown above and in GitHub code scanning when SARIF upload is available.'
+          } >> "$GITHUB_STEP_SUMMARY"
