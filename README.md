@@ -123,6 +123,9 @@ for the ownership model, safety warning, and verification steps.
 The `latest` branch is the integration branch for shared maintenance work; it
 is not a consumer image tag. PHP branches hold version-specific Dockerfiles but
 do not publish branch-named images. Published PHP images come only from version-like Git tags.
+Shared maintenance commits do not require rebuilding or moving these tags;
+publish a new image revision only when release image inputs change or an
+explicit rebuild is intended.
 
 Run the required checks for a change on `latest`:
 
