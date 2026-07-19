@@ -118,12 +118,13 @@ Buster runtime with `spritsail/debian-builder:buster`.
 
 ## Keep The Base Image Focused
 
-The maintained image contract is Apache/PHP with custom ImageMagick, bundled
-imagick and GMP, tested WebP support, and downstream PHP-extension installation.
-Standalone image, media, and database command-line tools are application
-choices. Keep `jpegoptim`, `webp`, `ffmpeg`, and `mariadb-client` in downstream
-Dockerfiles so applications can preserve their production behavior without
-making every consumer inherit those packages and dependency trees.
+The maintained image contract is the upstream Apache/PHP base with a newer
+pinned ImageMagick, bundled imagick linked against that build, and tested WebP
+support. Unrelated PHP extensions, general-purpose extension installers, and
+standalone image, media, and database command-line tools are application
+choices. Keep extensions such as GMP and tools such as `jpegoptim`, `webp`,
+`ffmpeg`, and `mariadb-client` in downstream Dockerfiles so every consumer does
+not inherit their dependencies or release behavior.
 
 WebP format support is different from the `webp` CLI. Build ImageMagick with
 `libwebp-dev`, install its runtime libraries explicitly in the final stage, and
