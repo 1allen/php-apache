@@ -8,6 +8,7 @@ that build, and verified WebP support.
 
 - newer pinned ImageMagick built under `/usr/local`, with verified WebP support
 - pinned PECL `imagick` compiled against that custom ImageMagick build
+- `install-php-extensions` available for downstream image customization
 
 ## Useful Build Improvements
 
@@ -64,16 +65,12 @@ root to the application.
 
 ## Downstream Customization
 
-Application-specific PHP extensions and command-line tools stay downstream. A
-derived image can bring its own extension installer and install only what the
-application uses:
+Application-specific PHP extensions and command-line tools stay downstream.
+The final image includes `install-php-extensions`, so a derived image can
+install only what the application uses:
 
 ```Dockerfile
-FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
-
 FROM 1allen/php-apache:8.5
-
-COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN set -eux; \
     install-php-extensions protobuf grpc redis; \
@@ -97,8 +94,7 @@ Pin extension versions when reproducible builds require them. The bundled
 `imagick` extension should remain unchanged because it is intentionally compiled
 against this image's custom ImageMagick. WebP support in bundled
 ImageMagick/imagick is part of the base contract and does not depend on the
-optional `webp` CLI. Pin the installer image by version or digest when the
-downstream build requires a reproducible installer toolchain.
+optional `webp` CLI.
 
 ## Rootless Docker
 
