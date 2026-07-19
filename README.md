@@ -1,23 +1,23 @@
 # php-apache
 
-Maintained Apache and PHP container images based on
-[`webdevops/php-apache`](https://hub.docker.com/r/webdevops/php-apache), with a
-newer pinned ImageMagick build and PECL `imagick` linked against it.
-
-The images are intended for PHP applications that need dependable image
-processing and a straightforward way to add application-specific PHP
-extensions and command-line tools downstream.
+Custom [`webdevops/php-apache`](https://hub.docker.com/r/webdevops/php-apache)
+images with a newer pinned ImageMagick, bundled PECL `imagick` linked against
+that build, and verified WebP support.
 
 ## Features
 
-- Apache with PHP-FPM from the upstream WebDevOps image
-- custom ImageMagick under `/usr/local`, including WebP support
-- bundled PECL `imagick`, compiled against the custom ImageMagick build
-- bundled `gmp` PHP extension
-- tested WebP support without requiring the standalone `webp` CLI
-- `install-php-extensions` available for downstream image customization
-- published, PHP-minor-specific image tags rather than a floating development
-  tag
+- newer pinned ImageMagick built under `/usr/local`, with verified WebP support
+- pinned PECL `imagick` compiled against that custom ImageMagick build
+
+## Useful Build Improvements
+
+- SHA-256 verification for downloaded ImageMagick and PECL `imagick` sources
+- a headless ImageMagick build without X11, documentation, C++ bindings, static
+  archives, or libtool metadata
+- explicit WebP runtime libraries without bundling the standalone `webp` CLI
+- build-time WebP checks through both ImageMagick and PHP `imagick`
+- compatibility cleanup for an inherited ionCube configuration only when its
+  loader is missing or unusable
 
 ## Supported Images
 
@@ -64,12 +64,16 @@ root to the application.
 
 ## Downstream Customization
 
-The final image includes the mlocati extension installer. Combine PHP extensions
-and only the operating-system tools the application uses in one downstream
-layer:
+Application-specific PHP extensions and command-line tools stay downstream. A
+derived image can bring its own extension installer and install only what the
+application uses:
 
 ```Dockerfile
+FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
+
 FROM 1allen/php-apache:8.5
+
+COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN set -eux; \
     install-php-extensions protobuf grpc redis; \
@@ -93,7 +97,8 @@ Pin extension versions when reproducible builds require them. The bundled
 `imagick` extension should remain unchanged because it is intentionally compiled
 against this image's custom ImageMagick. WebP support in bundled
 ImageMagick/imagick is part of the base contract and does not depend on the
-optional `webp` CLI.
+optional `webp` CLI. Pin the installer image by version or digest when the
+downstream build requires a reproducible installer toolchain.
 
 ## Rootless Docker
 
