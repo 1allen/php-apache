@@ -607,6 +607,9 @@ assert_file_contains "$SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/image_contrac
 assert_file_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
 assert_file_contains "$CI_TRIVY_SCAN_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
 assert_file_contains "$TAGS_SCRIPT_PATH" 'source "$ROOT_DIR/scripts/lib/release_ref.sh"'
+assert_file_contains "$TAGS_SCRIPT_PATH" '--approve-contract-change'
+assert_file_contains "$SCRIPT_PATH" '--approve-contract-change'
+assert_file_contains "$AGENTS_PATH" 'Never use `--approve-contract-change` unless the user'
 assert_file_not_contains "$CI_DOCKER_BUILD_SCRIPT_PATH" 'trivy'
 
 tooling_output="$(bash "$SCRIPT_PATH" verify-image-tooling latest)"
@@ -752,6 +755,8 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
 
     git remote add origin "$TMP_REPO_REMOTE"
     git push origin latest php85 >/dev/null 2>&1
+    git tag 8.5 php85
+    git push origin refs/tags/8.5 >/dev/null 2>&1
 
     printf '\nShared workflow update.\n' >>README.md
     git add README.md
@@ -773,6 +778,29 @@ chmod +x "$TMP_REPO/scripts/repo_sync.sh"
         exit 1
     }
     assert_contains "$(git show php85:README.md)" 'Shared workflow update.'
+
+    printf '\n# Test core image-contract policy change.\n' >>scripts/lib/image_contract.sh
+    git add scripts/lib/image_contract.sh
+    git -c commit.gpgsign=false commit -m "test contract policy update" >/dev/null
+    sync_apply_output="$(bash scripts/repo_sync.sh sync-shared --apply php85)"
+    assert_contains "$sync_apply_output" 'php85: committed shared-file sync.'
+    if contract_push_output="$(bash scripts/repo_sync.sh sync-shared --push php85 2>&1)"; then
+        echo "Expected sync-shared --push to require explicit approval for an image-contract policy change." >&2
+        exit 1
+    fi
+    assert_contains "$contract_push_output" 'Core image-contract policy changed'
+    contract_push_output="$(bash scripts/repo_sync.sh sync-shared --push --approve-contract-change php85)"
+    assert_contains "$contract_push_output" 'Explicit core image-contract change approval supplied.'
+    assert_contains "$contract_push_output" 'Pushed shared-file sync branches atomically:'
+
+    if contract_tag_output="$(bash scripts/tags_update.sh --apply php85 2>&1)"; then
+        echo "Expected tags_update.sh --apply to require explicit approval for an image-contract policy change." >&2
+        exit 1
+    fi
+    assert_contains "$contract_tag_output" 'Core image-contract policy changed for php85 -> 8.5.'
+    contract_tag_output="$(bash scripts/tags_update.sh --apply --approve-contract-change php85)"
+    assert_contains "$contract_tag_output" 'Explicit core image-contract change approval supplied for php85 -> 8.5.'
+    assert_contains "$contract_tag_output" 'Tag update complete.'
 
     if bash -c '
         set -euo pipefail
