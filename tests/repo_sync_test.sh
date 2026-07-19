@@ -158,7 +158,7 @@ assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_VERSION=3.8.1'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGICK_SHA256=3a3587c0a524c17d0dad9673a160b90cd776e836838474e173b549ed864352ee'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_VERSION=7.1.2-26'
 assert_file_contains "$DOCKERFILE_PATH" 'ARG IMAGEMAGICK_SHA256=d63594e334e1c410f600fb9370d78d49e4dc6f315722ca4ba083e864e5c354cb'
-assert_file_not_contains "$MANIFEST_PATH" 'PHP_EXTENSION_INSTALLER_IMAGE'
+assert_file_contains "$MANIFEST_PATH" 'PHP_EXTENSION_INSTALLER_IMAGE="ghcr.io/mlocati/php-extension-installer:latest"'
 
 [[ -n "$PUBLISH_TAG_PATTERN" && -n "$PHP_BRANCH_PATTERN" ]] || {
     echo "Expected release-ref patterns to be configured." >&2
@@ -375,8 +375,8 @@ assert_file_contains "$DOCKERFILE_PATH" 'PKG_CONFIG_PATH=/usr/local/lib/pkgconfi
 assert_file_contains "$DOCKERFILE_PATH" 'make install DESTDIR=/tmp/imgck'
 assert_file_contains "$DOCKERFILE_PATH" "find /tmp/imgck/usr/local/lib -type f"
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
-assert_file_not_contains "$DOCKERFILE_PATH" 'php-extension-installer'
-assert_file_not_contains "$DOCKERFILE_PATH" 'install-php-extensions'
+assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
+assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
 assert_file_not_contains "$DOCKERFILE_PATH" 'gmp'
 assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with-imagick=/usr/local'
 assert_file_contains "$DOCKERFILE_PATH" '--without-x'
@@ -402,7 +402,7 @@ assert_file_contains "$README_PATH" '## Useful Build Improvements'
 assert_file_contains "$README_PATH" 'newer pinned ImageMagick built under `/usr/local`'
 assert_file_contains "$README_PATH" 'with verified WebP support'
 assert_file_not_contains "$README_PATH" 'bundled `gmp`'
-assert_file_not_contains "$README_PATH" '`install-php-extensions` available'
+assert_file_contains "$README_PATH" '`install-php-extensions` available'
 assert_file_contains "$README_PATH" '## Supported Images'
 assert_file_contains "$README_PATH" '## Quick Start'
 assert_file_contains "$README_PATH" '## Rootless Docker'
@@ -582,9 +582,12 @@ broken_contract="$dockerfile_content"$'\n        ffmpeg \\\n'
 contract_missing="$(image_contract_missing_invariants "$broken_contract")"
 assert_contains "$contract_missing" 'optional base package absent: ffmpeg'
 
+broken_contract="${dockerfile_content/COPY --from=php-extension-installer \/usr\/bin\/install-php-extensions \/usr\/local\/bin\//}"
+contract_missing="$(image_contract_missing_invariants "$broken_contract")"
+assert_contains "$contract_missing" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
+
 broken_contract="$dockerfile_content"$'\nRUN install-php-extensions gmp\n'
 contract_missing="$(image_contract_missing_invariants "$broken_contract")"
-assert_contains "$contract_missing" 'non-core image feature absent: install-php-extensions'
 assert_contains "$contract_missing" 'non-core image feature absent: gmp'
 
 buster_contract="${dockerfile_content/libwebp7/libwebp6}"
