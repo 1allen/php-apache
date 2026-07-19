@@ -255,12 +255,15 @@ publish job.
 
 GitHub Actions also runs the advisory `Published image analysis` workflow for
 version-like tag pushes. It waits for the same Semaphore release status through
-`scripts/ci/release_status.sh --wait`, then analyzes the exact public Docker Hub
-tag with Dive and Docker Scout without rebuilding or publishing it. Dive reports
-layer efficiency in the workflow log. Scout reports fixable critical and high
+`scripts/ci/release_status.sh --wait`, then uses
+`scripts/ci/wait_for_published_image.sh` to wait until Docker Hub exposes an
+image updated after the tag-push event. It analyzes that exact public tag with
+Dive and Docker Scout without rebuilding or publishing it. Dive reports layer
+efficiency in the workflow log. Scout reports fixable critical and high
 vulnerabilities and base-image recommendations in the job summary, and uploads
 SARIF to GitHub code scanning when that feature is available. Operators can
-rerun the workflow manually for an existing version tag. Scanner findings and
+rerun the workflow manually for an existing version tag; manual runs require
+the tag to exist but do not require a newer publication. Scanner findings and
 SARIF upload failures remain advisory and do not change the completed release.
 
 If the local Docker build is not practical, still run the shell test and review
@@ -320,6 +323,7 @@ machinery:
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
+| Wait for a published Docker Hub tag | `bash scripts/ci/wait_for_published_image.sh [--wait] tag` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Review a published image in GitHub | `Published image analysis` Actions workflow |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |

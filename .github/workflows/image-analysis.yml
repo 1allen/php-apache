@@ -44,8 +44,18 @@ jobs:
           fi
           echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
           echo "ref=$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME:$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
-      - name: Wait for Semaphore publication
+      - name: Wait for Semaphore preflight
         run: bash scripts/ci/release_status.sh --wait "${{ steps.image.outputs.tag }}"
+      - name: Wait for Docker Hub publication
+        env:
+          PUSHED_AT: ${{ github.event.repository.pushed_at }}
+        run: |
+          wait_args=(--wait)
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            wait_args+=(--updated-after "$PUSHED_AT")
+          fi
+          bash scripts/ci/wait_for_published_image.sh \
+            "${wait_args[@]}" "${{ steps.image.outputs.tag }}"
       - name: Analyze image layers with Dive
         id: dive
         continue-on-error: true
