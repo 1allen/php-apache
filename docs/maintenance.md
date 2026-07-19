@@ -306,14 +306,14 @@ machinery:
 
 | Outcome | Maintained interface |
 | --- | --- |
-| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply\|--push]` |
+| Propagate shared files | `bash scripts/repo_sync.sh sync-shared [--apply\|--push] [--approve-contract-change]` |
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |
-| Move supported semver tags | `bash scripts/tags_update.sh [--apply]` |
+| Move supported semver tags | `bash scripts/tags_update.sh [--apply] [--approve-contract-change]` |
 
 Before changing external state, preview the exact commands and their branch,
 image, tag, or issue effects against the Branch Flow below. Do not replace this
@@ -322,6 +322,13 @@ scripts, or new orchestration unless the maintained interface cannot satisfy a
 specific requirement. Document the exact gap and obtain explicit approval
 before designing an alternative. If the documented behavior is unclear, inspect
 the implementation and ask; do not import a generic workflow.
+
+`scripts/lib/image_contract.sh` is core consumer-contract policy. If it changed,
+branch push and tag apply stop by default even when the candidate Dockerfile
+passes the new policy. Review the policy diff separately and obtain the user's
+explicit approval for that exact change before passing
+`--approve-contract-change`. Do not infer this approval from a cleanup, size,
+documentation, or dependency-update request.
 
 ### Image Size Metrics
 

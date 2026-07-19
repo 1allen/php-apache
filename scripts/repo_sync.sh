@@ -18,7 +18,7 @@ usage() {
     cat <<'EOF'
 Usage:
   bash scripts/repo_sync.sh status
-  bash scripts/repo_sync.sh sync-shared [--apply|--push] [branch...]
+  bash scripts/repo_sync.sh sync-shared [--apply|--push] [--approve-contract-change] [branch...]
   bash scripts/repo_sync.sh verify-image-tooling [branch...]
   bash scripts/repo_sync.sh bootstrap-version php85 [--apply]
 
@@ -30,6 +30,8 @@ Commands:
                      explicit branches are provided.
                      Use --apply to create branch-local commits. After required
                      checks, use --push to verify sync and atomically push them.
+                     Core image-contract policy changes also require the user's
+                     explicit --approve-contract-change authorization.
   verify-image-tooling
                      Check that supported branch Dockerfiles include the image
                      tooling expected by downstream custom images.
@@ -194,6 +196,7 @@ status_command() {
 sync_shared_command() {
     local apply=0
     local push=0
+    local approve_contract_change=0
     local message="chore: sync shared repo files from ${BOOTSTRAP_SOURCE_BRANCH}"
     local target_branches=()
     local push_branches=()
@@ -203,6 +206,9 @@ sync_shared_command() {
     local worktree
     local changed_files=()
     local copied_any=0
+    local contract_error
+    local dockerfile_content
+    local contract_policy_changed=0
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -211,6 +217,9 @@ sync_shared_command() {
                 ;;
             --push)
                 push=1
+                ;;
+            --approve-contract-change)
+                approve_contract_change=1
                 ;;
             -*)
                 die "Unknown sync-shared option: $1"
@@ -228,6 +237,10 @@ sync_shared_command() {
 
     if [[ $push -eq 1 && $apply -eq 1 ]]; then
         die "--apply and --push are separate gated phases."
+    fi
+
+    if [[ $approve_contract_change -eq 1 && $push -eq 0 ]]; then
+        die "--approve-contract-change is valid only with --push."
     fi
 
     git_worktree_transaction_begin "$ROOT_DIR"
@@ -300,6 +313,25 @@ sync_shared_command() {
 
     if [[ $push -eq 1 ]]; then
         [[ ${#push_branches[@]} -gt 0 ]] || die "No local branches available to push."
+
+        for branch in "${push_branches[@]}"; do
+            dockerfile_content="$(git -C "$ROOT_DIR" show "$branch:Dockerfile.ubuntu")"
+            if ! contract_error="$(image_contract_validate_content "$dockerfile_content" 2>&1)"; then
+                die "$branch violates the maintained image contract before push: $contract_error"
+            fi
+
+            if ! git -C "$ROOT_DIR" diff --quiet "origin/$branch..$branch" -- scripts/lib/image_contract.sh; then
+                contract_policy_changed=1
+            fi
+        done
+
+        if [[ $contract_policy_changed -eq 1 && $approve_contract_change -eq 0 ]]; then
+            die "Core image-contract policy changed. Preview the policy diff and obtain explicit user approval before retrying with --approve-contract-change."
+        fi
+        if [[ $contract_policy_changed -eq 1 ]]; then
+            echo "Explicit core image-contract change approval supplied."
+        fi
+
         git -C "$ROOT_DIR" push --atomic origin "${push_branches[@]}"
         print_section "Pushed shared-file sync branches atomically:" "${push_branches[@]}"
     fi
