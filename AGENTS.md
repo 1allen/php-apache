@@ -47,6 +47,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   preview the exact commands and effects and compare them with the maintenance
   runbook. If the documented route or its effect is unclear, stop and ask
   instead of inventing a workflow.
+- Do not move version tags after documentation, test, or CI-adapter-only changes.
+  Move tags only when release image inputs changed or an explicit rebuild is
+  intended; branch synchronization does not automatically imply publication.
 - Keep provider-ref classification in `scripts/lib/release_ref.sh`, maintained
   Dockerfile invariants in `scripts/lib/image_contract.sh`, and temporary Git
   worktree mechanics in `scripts/lib/git_worktree.sh`.
