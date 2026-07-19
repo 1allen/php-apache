@@ -1,10 +1,10 @@
 # Maintenance Runbook
 
 This project maintains custom PHP Apache images derived from
-`webdevops/php-apache`. The image adds a current ImageMagick build with WebP
-support, PECL `imagick`, `gmp`, and the `install-php-extensions` helper for
-downstream customization. Application-specific media and database CLIs belong
-in downstream images.
+`webdevops/php-apache`. Its purpose is a newer pinned ImageMagick build with
+verified WebP support and PECL `imagick` explicitly linked against it.
+Application-specific PHP extensions and command-line tools belong in downstream
+images.
 
 Upstream references:
 
@@ -32,9 +32,6 @@ As of 2026-07-16:
   `webp` CLI package is optional downstream tooling.
 - ImageMagick is configured with `--without-x`; this headless server image does
   not bundle `libxt6` or promise the X11-only display commands.
-- `install-php-extensions` is copied from
-  the installer image configured in `config/php-branches.conf` into
-  `/usr/local/bin`.
 - CI enables BuildKit inline cache metadata. A version-tag build uses its
   previous same tag as the primary cache source; a patch tag also falls back to
   its `X.Y` tag. PR and `latest` builds use `DEFAULT_BUILD_CACHE_TAG`. CI does
@@ -89,18 +86,17 @@ As of 2026-07-16:
 
 ## Why Imagick Is Built Explicitly
 
-The final image must continue to bundle `imagick`; it is one of the core
+The final image must continue to bundle `imagick`; it is one of the two core
 features of this repository. The build installs it from pinned PECL source so
 it links against the custom ImageMagick copied from the `imagemagick-builder`
-stage into `/usr/local`. The mlocati installer knows how to install `imagick`,
-but on Debian it also manages distro ImageMagick packages. That is useful for
-default images, but it can hide whether the extension linked to the custom
-`/usr/local` ImageMagick build.
+stage into `/usr/local`. General-purpose extension installers can also manage
+distro ImageMagick packages, which can hide whether the extension linked to the
+custom `/usr/local` build.
 
 For that reason:
 
-- use `install-php-extensions` for ordinary extensions such as `gmp`,
-  `protobuf`, `grpc`, and `redis`;
+- install application-specific extensions such as `protobuf`, `grpc`, and
+  `redis` in downstream images;
 - keep `imagick` bundled in this image and keep its PECL source build explicit
   unless you verify the linked libraries with `ldd`;
 - run `ldconfig /usr/local/lib` before and after compiling `imagick`.
@@ -110,12 +106,11 @@ For that reason:
 Useful verification commands after a build:
 
 ```bash
-docker run --rm php-apache:local php -m | grep -E '^(gmp|imagick)$'
+docker run --rm php-apache:local php -m | grep -E '^imagick$'
 docker run --rm php-apache:local php --ri imagick
 docker run --rm php-apache:local sh -lc 'ldd "$(php-config --extension-dir)/imagick.so" | grep -i magick'
 docker run --rm php-apache:local sh -lc 'magick -size 2x2 xc:white /tmp/check.webp && magick identify /tmp/check.webp'
 docker run --rm php-apache:local php -r 'var_export(Imagick::queryFormats("WEBP"));'
-docker run --rm php-apache:local command -v install-php-extensions
 ```
 
 ## Base-Image Compatibility Cleanup
@@ -266,48 +261,24 @@ updates.
 
 ## Downstream Images
 
-Downstream images based on these project images can install more PHP extensions
-without downloading the installer again:
+The base image intentionally does not bundle application-specific PHP
+extensions or a general-purpose extension installer. A downstream image can
+bring its preferred installer explicitly:
 
 ```Dockerfile
+FROM ghcr.io/mlocati/php-extension-installer:latest AS php-extension-installer
+
 FROM 1allen/php-apache:8.5
 
-RUN install-php-extensions protobuf grpc redis
-```
-
-This replaces the older local PECL customization pattern:
-
-```Dockerfile
-FROM 1allen/php-apache:8.5
-
-RUN apt-get update && apt-get install -y zlib1g-dev \
-    && pecl install grpc \
-    && pecl install redis
-RUN docker-php-ext-enable grpc redis
-```
-
-With the bundled installer, the same intent becomes:
-
-```Dockerfile
-FROM 1allen/php-apache:8.5
+COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN install-php-extensions grpc redis protobuf
 ```
 
-The installer resolves build packages, installs the PECL-backed extensions, and
-enables them. Use this for downstream `grpc`, `redis`, and `protobuf` unless
-you are debugging a PECL-specific failure and need to reproduce installer steps.
-
-Pin extension versions downstream when reproducibility matters:
-
-```Dockerfile
-FROM 1allen/php-apache:8.5
-
-RUN install-php-extensions protobuf-4.30.2 grpc-1.72.0 redis-6.2.0
-```
-
-Use the installer for extension dependencies, but keep application packages in
-the downstream Dockerfile so this base image stays broadly reusable.
+Pin the installer image and extension versions downstream when reproducibility
+matters. Keeping that choice in the application image prevents unrelated PHP
+extensions and installer release behavior from becoming part of this base
+image's contract.
 
 Install optional operating-system tools by application capability rather than
 growing the shared base image:

@@ -3,34 +3,16 @@
 # Maintained Docker image contract. Validation output is one missing invariant
 # per line; an empty result means the Dockerfile satisfies the contract.
 
-image_contract_installer_source_present() {
-    local dockerfile_content="$1"
-    local image_ref
-
-    # shellcheck disable=SC2016
-    if [[ "$dockerfile_content" == *'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'* ]] \
-        && [[ "$dockerfile_content" == *"ARG PHP_EXTENSION_INSTALLER_IMAGE=$PHP_EXTENSION_INSTALLER_IMAGE"* ]]; then
-        return 0
-    fi
-
-    for image_ref in "${PHP_EXTENSION_INSTALLER_IMAGE_REFS[@]}"; do
-        [[ "$dockerfile_content" == *"FROM $image_ref AS php-extension-installer"* ]] && return 0
-    done
-
-    return 1
-}
-
 image_contract_missing_invariants() {
     local dockerfile_content="$1"
     local marker
+    local forbidden_marker
     local package_name
     local package_line
     local webp_runtime_package
     # shellcheck disable=SC2016
     local required_markers=(
-        'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
         'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
-        'install-php-extensions gmp'
         'docker-php-ext-configure imagick --with-imagick=/usr/local'
         'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
         'make install DESTDIR=/tmp/imgck'
@@ -47,12 +29,14 @@ image_contract_missing_invariants() {
         'Imagick::queryFormats("WEBP")'
     )
 
-    if ! image_contract_installer_source_present "$dockerfile_content"; then
-        echo "php-extension-installer source from config/php-branches.conf"
-    fi
-
     for marker in "${required_markers[@]}"; do
         [[ "$dockerfile_content" == *"$marker"* ]] || echo "$marker"
+    done
+
+    for forbidden_marker in php-extension-installer install-php-extensions gmp; do
+        if [[ "$dockerfile_content" == *"$forbidden_marker"* ]]; then
+            echo "non-core image feature absent: $forbidden_marker"
+        fi
     done
 
     for webp_runtime_package in libwebp7 libwebp6; do
