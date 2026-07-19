@@ -197,7 +197,8 @@ runbook and maintained scripts are project interfaces that encode branch,
 release, provider-neutral CI, and frozen-version policy. Work must first route
 through `scripts/repo_sync.sh sync-shared`, `scripts/repo_sync.sh
 verify-image-tooling`, `scripts/ci/docker_build.sh`,
-`scripts/ci/trivy_scan.sh`, `scripts/tags_update.sh`, and
+`scripts/ci/release_status.sh`, `scripts/ci/trivy_scan.sh`,
+`scripts/tags_update.sh`, and
 `scripts/docker_hub_cleanup.sh`, as applicable.
 
 Do not replace that flow with parallel rollout pull requests, temporary rollout
