@@ -12,6 +12,12 @@ Dockerfiles and receive a Docker-free image-contract preflight. They do not
 publish branch-named images. Version-like Git tags are the only Docker Hub
 publish refs.
 
+Version tags identify published image revisions, not every maintenance commit.
+Advancing shared documentation, tests, or CI adapters across PHP branches does
+not by itself justify moving tags and rebuilding all consumer images. Move a
+version tag when release image inputs changed or when an explicit rebuild is
+required, such as a deliberate refresh of mutable upstream inputs.
+
 Each version tag builds exactly once in the protected publish pipeline, pushes
 only after the build succeeds, and then receives the advisory scan. The root
 pipeline performs only the release-source preflight for version tags, avoiding
@@ -89,6 +95,13 @@ with compressed bytes, baseline savings, digest, and attempted cache sources.
 Do not label attempted sources as cache hits. Add hit-rate reporting only when
 the builder exposes a stable machine-readable signal that does not require
 parsing presentation-oriented logs.
+
+The 2026-07 optimization rollout reduced aggregate build compute for PHP 8.0
+through 8.5 from 1,991 seconds to 929 seconds, a 53.3% reduction. The same
+rollout reduced aggregate registry-compressed size from 3,568.8 MiB to
+2,770.7 MiB, saving 798.1 MiB or 22.36%. These are dated rollout measurements,
+not fixed performance guarantees; use the maintained metrics interface and CI
+logs for current releases.
 
 ## Stage ImageMagick With DESTDIR
 
