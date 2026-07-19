@@ -265,6 +265,10 @@ SARIF to GitHub code scanning when that feature is available. Operators can
 rerun the workflow manually for an existing version tag; manual runs require
 the tag to exist but do not require a newer publication. Scanner findings and
 SARIF upload failures remain advisory and do not change the completed release.
+Repository administrators must configure a read-only Docker Hub personal
+access token as the protected `DOCKER_SCOUT_TOKEN` Actions secret. Keep it
+separate from the deletion-capable `DOCKER_HUB_TOKEN` used by the cleanup
+workflow.
 
 If the local Docker build is not practical, still run the shell test and review
 the Dockerfile diff carefully. The real build happens in Semaphore. After

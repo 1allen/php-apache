@@ -65,7 +65,9 @@ completion of the promoted publish pipeline. This registry verification closes
 that gap without another build or publication path. Keep the analysis advisory,
 restrict it to version-like tags, and use Scout's fixable critical and high
 findings plus SARIF as additional review surfaces rather than replacing the
-provider-neutral Trivy scan.
+provider-neutral Trivy scan. Authenticate Scout with a dedicated read-only
+`DOCKER_SCOUT_TOKEN`; do not expose the deletion-capable Docker Hub cleanup
+credential to third-party analysis actions.
 
 ## Measure Registry-Compressed Image Size
 
