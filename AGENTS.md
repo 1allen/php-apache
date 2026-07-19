@@ -50,6 +50,12 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   preview the exact commands and effects and compare them with the maintenance
   runbook. If the documented route or its effect is unclear, stop and ask
   instead of inventing a workflow.
+- Treat `scripts/lib/image_contract.sh` as core consumer-contract policy.
+  Never remove or reclassify a required capability and then rewrite its tests
+  and documentation to match without the user's explicit approval of that exact
+  contract change. Adjacent cleanup approval is not approval for a breaking
+  contract change. Never use `--approve-contract-change` unless the user
+  explicitly approved the displayed policy diff.
 - Do not move version tags after documentation, test, or CI-adapter-only changes.
   Move tags only when release image inputs changed or an explicit rebuild is
   intended; branch synchronization does not automatically imply publication.

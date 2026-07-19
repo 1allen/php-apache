@@ -6,7 +6,6 @@
 image_contract_missing_invariants() {
     local dockerfile_content="$1"
     local marker
-    local forbidden_marker
     local package_name
     local package_line
     local webp_runtime_package
@@ -36,11 +35,9 @@ image_contract_missing_invariants() {
         [[ "$dockerfile_content" == *"$marker"* ]] || echo "$marker"
     done
 
-    for forbidden_marker in gmp; do
-        if [[ "$dockerfile_content" == *"$forbidden_marker"* ]]; then
-            echo "non-core image feature absent: $forbidden_marker"
-        fi
-    done
+    if [[ "$dockerfile_content" == *gmp* ]]; then
+        echo "non-core image feature absent: gmp"
+    fi
 
     for webp_runtime_package in libwebp7 libwebp6; do
         [[ "$dockerfile_content" == *"        $webp_runtime_package \\"* ]] && break
