@@ -120,9 +120,10 @@ Buster runtime with `spritsail/debian-builder:buster`.
 
 The maintained image contract is the upstream Apache/PHP base with a newer
 pinned ImageMagick, bundled imagick linked against that build, and tested WebP
-support. Unrelated PHP extensions, general-purpose extension installers, and
-standalone image, media, and database command-line tools are application
-choices. Keep extensions such as GMP and tools such as `jpegoptim`, `webp`,
+support. The base also retains `install-php-extensions` as a stable interface
+used by downstream images; the installer is tooling, not an application-specific
+extension. Unrelated PHP extensions and standalone image, media, and database
+command-line tools are application choices. Keep extensions such as GMP and tools such as `jpegoptim`, `webp`,
 `ffmpeg`, and `mariadb-client` in downstream Dockerfiles so every consumer does
 not inherit their dependencies or release behavior.
 
