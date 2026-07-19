@@ -13,6 +13,9 @@ image_contract_missing_invariants() {
     # shellcheck disable=SC2016
     local required_markers=(
         'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
+        'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
+        'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
+        'test -x /usr/local/bin/install-php-extensions'
         'docker-php-ext-configure imagick --with-imagick=/usr/local'
         'PKG_CONFIG_PATH=/usr/local/lib/pkgconfig'
         'make install DESTDIR=/tmp/imgck'
@@ -33,7 +36,7 @@ image_contract_missing_invariants() {
         [[ "$dockerfile_content" == *"$marker"* ]] || echo "$marker"
     done
 
-    for forbidden_marker in php-extension-installer install-php-extensions gmp; do
+    for forbidden_marker in gmp; do
         if [[ "$dockerfile_content" == *"$forbidden_marker"* ]]; then
             echo "non-core image feature absent: $forbidden_marker"
         fi
