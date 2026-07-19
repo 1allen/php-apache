@@ -12,6 +12,7 @@ IMAGE_METRICS_SCRIPT_PATH="$ROOT_DIR/scripts/image_metrics.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
 CI_RELEASE_STATUS_SCRIPT_PATH="$ROOT_DIR/scripts/ci/release_status.sh"
+CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH="$ROOT_DIR/scripts/ci/wait_for_published_image.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 IMAGE_SIZE_BASELINE_PATH="$ROOT_DIR/config/image-size-baseline.tsv"
 DOCKERFILE_PATH="$ROOT_DIR/Dockerfile.ubuntu"
@@ -22,6 +23,7 @@ DECISIONS_PATH="$ROOT_DIR/docs/decisions.md"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
 SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
 GITHUB_CLEANUP_PATH="$ROOT_DIR/.github/workflows/docker-hub-cleanup.yml"
+GITHUB_IMAGE_ANALYSIS_PATH="$ROOT_DIR/.github/workflows/image-analysis.yml"
 RELEASE_REF_PATH="$ROOT_DIR/scripts/lib/release_ref.sh"
 IMAGE_CONTRACT_PATH="$ROOT_DIR/scripts/lib/image_contract.sh"
 GIT_WORKTREE_PATH="$ROOT_DIR/scripts/lib/git_worktree.sh"
@@ -73,6 +75,11 @@ source "$IMAGE_CONTRACT_PATH"
 
 [[ -x "$CI_RELEASE_STATUS_SCRIPT_PATH" ]] || {
     echo "Missing executable release status script: $CI_RELEASE_STATUS_SCRIPT_PATH" >&2
+    exit 1
+}
+
+[[ -x "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" ]] || {
+    echo "Missing executable published-image wait script: $CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" >&2
     exit 1
 }
 
@@ -129,6 +136,83 @@ set -e
     exit 1
 }
 
+test_temp_dir TMP_PUBLISHED_IMAGE published-image
+mkdir -p "$TMP_PUBLISHED_IMAGE/bin"
+cat > "$TMP_PUBLISHED_IMAGE/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+count=0
+if [[ -f "$MOCK_PUBLISHED_IMAGE_COUNT" ]]; then
+    count="$(<"$MOCK_PUBLISHED_IMAGE_COUNT")"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" >"$MOCK_PUBLISHED_IMAGE_COUNT"
+
+case "${MOCK_PUBLISHED_IMAGE_MODE:-current}" in
+    current)
+        updated=2026-07-20T12:00:00Z
+        ;;
+    stale-then-current)
+        if [[ $count -eq 1 ]]; then
+            updated=2026-07-19T12:00:00Z
+        else
+            updated=2026-07-20T12:00:00Z
+        fi
+        ;;
+    missing)
+        exit 22
+        ;;
+    *)
+        exit 64
+        ;;
+esac
+
+printf '{"digest":"sha256:test-%s","last_updated":"%s"}\n' "$count" "$updated"
+EOF
+chmod +x "$TMP_PUBLISHED_IMAGE/bin/curl"
+
+published_image_output="$(
+    CURL_BIN="$TMP_PUBLISHED_IMAGE/bin/curl" \
+    MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
+    bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" --updated-after 1784500000 8.5
+)"
+assert_contains "$published_image_output" 'Published image ready: 1allen/php-apache:8.5'
+
+rm -f "$TMP_PUBLISHED_IMAGE/count"
+published_image_output="$(
+    CURL_BIN="$TMP_PUBLISHED_IMAGE/bin/curl" \
+    MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
+    MOCK_PUBLISHED_IMAGE_MODE=stale-then-current \
+    bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" \
+        --wait --interval 1 --timeout 2 --updated-after 1784500000 8.5
+)"
+assert_contains "$published_image_output" 'Waiting for published image: 1allen/php-apache:8.5'
+assert_contains "$published_image_output" 'Published image ready: 1allen/php-apache:8.5'
+
+set +e
+bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" --interval 0 8.5 >/dev/null 2>&1
+published_image_exit=$?
+set -e
+[[ "$published_image_exit" -eq 3 ]] || {
+    echo "Expected a zero polling interval to exit 3, got $published_image_exit." >&2
+    exit 1
+}
+
+rm -f "$TMP_PUBLISHED_IMAGE/count"
+set +e
+CURL_BIN="$TMP_PUBLISHED_IMAGE/bin/curl" \
+MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
+MOCK_PUBLISHED_IMAGE_MODE=missing \
+bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" \
+    --wait --interval 1 --timeout 0 8.5 >/dev/null
+published_image_exit=$?
+set -e
+[[ "$published_image_exit" -eq 2 ]] || {
+    echo "Expected missing published image to exit 2, got $published_image_exit." >&2
+    exit 1
+}
+
 status_output="$(bash "$SCRIPT_PATH" status)"
 assert_contains "$status_output" "Configured PHP branches:"
 assert_contains "$status_output" "php85"
@@ -141,6 +225,7 @@ assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
 assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
 assert_contains "$status_output" "scripts/ci/release_status.sh"
+assert_contains "$status_output" "scripts/ci/wait_for_published_image.sh"
 assert_contains "$status_output" "scripts/image_metrics.sh"
 assert_contains "$status_output" "scripts/docker_hub_cleanup.sh"
 assert_contains "$status_output" "config/image-size-baseline.tsv"
@@ -483,6 +568,43 @@ assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'push:'
 assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'pull_request:'
 assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'schedule:'
 assert_file_not_contains "$SEMAPHORE_PATH" 'pipeline_file: cleanup.yml'
+
+[[ -f "$GITHUB_IMAGE_ANALYSIS_PATH" ]] || {
+    echo "Missing GitHub Actions image analysis workflow: $GITHUB_IMAGE_ANALYSIS_PATH" >&2
+    exit 1
+}
+
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'workflow_dispatch:'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "tags:"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "- '*.*'"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'security-events: write'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'timeout-minutes: 70'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'persist-credentials: false'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source scripts/lib/release_ref.sh'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha=$(git rev-parse HEAD)'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "if: github.event_name == 'push'"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/release_status.sh --wait'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'wait_args=(--wait)'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/wait_for_published_image.sh'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" '--updated-after "$PUSHED_AT"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@481412c8b8de36d0f79e85aa382c60397466feb6'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'command: cves,recommendations'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dockerhub-user: ${{ steps.image.outputs.namespace }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dockerhub-password: ${{ secrets.DOCKER_SCOUT_TOKEN }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-severities: critical,high'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-fixed: true'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sarif-file: docker-scout.sarif'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'id: sarif'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'ref: refs/heads/${{ steps.image.outputs.source_branch }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha: ${{ steps.image.outputs.sha }}'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'SARIF_OUTCOME: ${{ steps.sarif.outcome }}'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker build'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker push'
 
 ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" <<'RUBY'
 require "yaml"
