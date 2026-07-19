@@ -333,6 +333,7 @@ machinery:
 | Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
 | Wait for a published Docker Hub tag | `bash scripts/ci/wait_for_published_image.sh [--wait] tag` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
+| Verify GitHub Action commit pins | `bash scripts/ci/verify_github_action_pins.sh .github/workflows/image-analysis.yml` |
 | Review a published image in GitHub | `Published image analysis` Actions workflow |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |

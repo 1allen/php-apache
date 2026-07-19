@@ -12,6 +12,7 @@ IMAGE_METRICS_SCRIPT_PATH="$ROOT_DIR/scripts/image_metrics.sh"
 CI_DOCKER_BUILD_SCRIPT_PATH="$ROOT_DIR/scripts/ci/docker_build.sh"
 CI_TRIVY_SCAN_SCRIPT_PATH="$ROOT_DIR/scripts/ci/trivy_scan.sh"
 CI_RELEASE_STATUS_SCRIPT_PATH="$ROOT_DIR/scripts/ci/release_status.sh"
+CI_VERIFY_GITHUB_ACTION_PINS_SCRIPT_PATH="$ROOT_DIR/scripts/ci/verify_github_action_pins.sh"
 CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH="$ROOT_DIR/scripts/ci/wait_for_published_image.sh"
 MANIFEST_PATH="$ROOT_DIR/config/php-branches.conf"
 IMAGE_SIZE_BASELINE_PATH="$ROOT_DIR/config/image-size-baseline.tsv"
@@ -228,6 +229,7 @@ assert_contains "$status_output" "docs/maintenance.md"
 assert_contains "$status_output" "scripts/ci/docker_build.sh"
 assert_contains "$status_output" "scripts/ci/trivy_scan.sh"
 assert_contains "$status_output" "scripts/ci/release_status.sh"
+assert_contains "$status_output" "scripts/ci/verify_github_action_pins.sh"
 assert_contains "$status_output" "scripts/ci/wait_for_published_image.sh"
 assert_contains "$status_output" "scripts/image_metrics.sh"
 assert_contains "$status_output" "scripts/docker_hub_cleanup.sh"
@@ -527,6 +529,7 @@ assert_file_contains "$SEMAPHORE_PATH" "pull_request !~ '^.+$' AND (branch =~ '^
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}"'
 assert_file_contains "$SEMAPHORE_PATH" 'CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}"'
+assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/verify_github_action_pins.sh .github/workflows/image-analysis.yml'
 assert_file_contains "$SEMAPHORE_PATH" 'bash scripts/ci/docker_build.sh'
 assert_file_contains "$SEMAPHORE_PATH" 'name: CI_DOCKER_MODE'
 assert_file_contains "$SEMAPHORE_PATH" 'value: build'
@@ -639,6 +642,38 @@ assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upl
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'SARIF_OUTCOME: ${{ steps.sarif.outcome }}'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker build'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker push'
+
+test_temp_dir TMP_ACTION_PINS github-action-pins
+mkdir -p "$TMP_ACTION_PINS/bin"
+cat > "$TMP_ACTION_PINS/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+url="${*: -1}"
+sha="${url##*/}"
+[[ "$sha" != 0000000000000000000000000000000000000000 ]] || exit 22
+printf '{"sha":"%s"}\n' "$sha"
+EOF
+chmod +x "$TMP_ACTION_PINS/bin/curl"
+
+action_pin_output="$(
+    CURL_BIN="$TMP_ACTION_PINS/bin/curl" \
+        bash "$CI_VERIFY_GITHUB_ACTION_PINS_SCRIPT_PATH" "$GITHUB_IMAGE_ANALYSIS_PATH"
+)"
+assert_contains "$action_pin_output" 'Verified 4 GitHub Action commit pins'
+
+sed 's/7188fc363630916deb702c7fdcf4e481b751f97a/0000000000000000000000000000000000000000/' \
+    "$GITHUB_IMAGE_ANALYSIS_PATH" > "$TMP_ACTION_PINS/invalid.yml"
+set +e
+CURL_BIN="$TMP_ACTION_PINS/bin/curl" \
+    bash "$CI_VERIFY_GITHUB_ACTION_PINS_SCRIPT_PATH" \
+        "$TMP_ACTION_PINS/invalid.yml" >/dev/null 2>&1
+action_pin_exit=$?
+set -e
+[[ "$action_pin_exit" -eq 1 ]] || {
+    echo "Expected an unresolvable GitHub Action pin to exit 1, got $action_pin_exit." >&2
+    exit 1
+}
 
 ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" <<'RUBY'
 require "yaml"
