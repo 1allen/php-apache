@@ -60,6 +60,14 @@ require_nonnegative_integer() {
         || die "$option_name requires a non-negative integer, got: $value"
 }
 
+require_positive_integer() {
+    local option_name="$1"
+    local value="$2"
+
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] \
+        || die "$option_name requires a positive integer, got: $value"
+}
+
 check_published_image() {
     local response
     local record
@@ -109,7 +117,7 @@ while [[ $# -gt 0 ]]; do
         --interval)
             [[ $# -ge 2 ]] || die "--interval requires seconds"
             POLL_INTERVAL_SECONDS="$2"
-            require_nonnegative_integer --interval "$POLL_INTERVAL_SECONDS"
+            require_positive_integer --interval "$POLL_INTERVAL_SECONDS"
             shift
             ;;
         --timeout)
@@ -165,4 +173,3 @@ while true; do
     echo "Waiting for published image: $DOCKER_USERNAME/$IMAGE_NAME:$TAG"
     sleep "$POLL_INTERVAL_SECONDS"
 done
-

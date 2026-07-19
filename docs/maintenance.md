@@ -263,8 +263,11 @@ efficiency in the workflow log. Scout reports fixable critical and high
 vulnerabilities and base-image recommendations in the job summary, and uploads
 SARIF to GitHub code scanning when that feature is available. Operators can
 rerun the workflow manually for an existing version tag; manual runs require
-the tag to exist but do not require a newer publication. Scanner findings and
-SARIF upload failures remain advisory and do not change the completed release.
+the tag to exist but do not require a newer publication or a historical
+Semaphore status. SARIF is associated with the matching supported `phpXX`
+source branch because GitHub code scanning does not accept a tag ref for this
+upload. Scanner findings and SARIF upload failures remain advisory and do not
+change the completed release.
 Repository administrators must configure a read-only Docker Hub personal
 access token as the protected `DOCKER_SCOUT_TOKEN` Actions secret. Keep it
 separate from the deletion-capable `DOCKER_HUB_TOKEN` used by the cleanup

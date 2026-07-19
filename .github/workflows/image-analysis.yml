@@ -23,7 +23,7 @@ jobs:
   analyze:
     name: Analyze published image
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 70
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -39,6 +39,7 @@ jobs:
           REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           source config/php-branches.conf
+          source scripts/lib/release_ref.sh
           if [[ ! "$REQUESTED_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
             echo "Refusing non-version tag: $REQUESTED_TAG" >&2
             exit 1
@@ -46,7 +47,10 @@ jobs:
           echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
           echo "namespace=$DEFAULT_DOCKER_USERNAME" >> "$GITHUB_OUTPUT"
           echo "ref=$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME:$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Wait for Semaphore preflight
+        if: github.event_name == 'push'
         run: bash scripts/ci/release_status.sh --wait "${{ steps.image.outputs.tag }}"
       - name: Wait for Docker Hub publication
         env:
@@ -89,6 +93,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
           sarif_file: docker-scout.sarif
+          ref: refs/heads/${{ steps.image.outputs.source_branch }}
+          sha: ${{ steps.image.outputs.sha }}
       - name: Summarize advisory analysis
         if: always()
         env:

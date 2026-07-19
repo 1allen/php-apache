@@ -185,10 +185,19 @@ published_image_output="$(
     MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
     MOCK_PUBLISHED_IMAGE_MODE=stale-then-current \
     bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" \
-        --wait --interval 0 --timeout 2 --updated-after 1784500000 8.5
+        --wait --interval 1 --timeout 2 --updated-after 1784500000 8.5
 )"
 assert_contains "$published_image_output" 'Waiting for published image: 1allen/php-apache:8.5'
 assert_contains "$published_image_output" 'Published image ready: 1allen/php-apache:8.5'
+
+set +e
+bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" --interval 0 8.5 >/dev/null 2>&1
+published_image_exit=$?
+set -e
+[[ "$published_image_exit" -eq 3 ]] || {
+    echo "Expected a zero polling interval to exit 3, got $published_image_exit." >&2
+    exit 1
+}
 
 rm -f "$TMP_PUBLISHED_IMAGE/count"
 set +e
@@ -196,7 +205,7 @@ CURL_BIN="$TMP_PUBLISHED_IMAGE/bin/curl" \
 MOCK_PUBLISHED_IMAGE_COUNT="$TMP_PUBLISHED_IMAGE/count" \
 MOCK_PUBLISHED_IMAGE_MODE=missing \
 bash "$CI_WAIT_FOR_PUBLISHED_IMAGE_SCRIPT_PATH" \
-    --wait --interval 0 --timeout 0 8.5 >/dev/null
+    --wait --interval 1 --timeout 0 8.5 >/dev/null
 published_image_exit=$?
 set -e
 [[ "$published_image_exit" -eq 2 ]] || {
@@ -569,7 +578,12 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'workflow_dispatch:'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "tags:"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "- '*.*'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'security-events: write'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'timeout-minutes: 70'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'persist-credentials: false'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source scripts/lib/release_ref.sh'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha=$(git rev-parse HEAD)'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "if: github.event_name == 'push'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/release_status.sh --wait'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'wait_args=(--wait)'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/wait_for_published_image.sh'
@@ -585,6 +599,8 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-fixed: true'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sarif-file: docker-scout.sarif'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'id: sarif'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'ref: refs/heads/${{ steps.image.outputs.source_branch }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha: ${{ steps.image.outputs.sha }}'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'SARIF_OUTCOME: ${{ steps.sarif.outcome }}'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker build'
