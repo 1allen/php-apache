@@ -253,6 +253,16 @@ block after `docker push`. It uses `aquasec/trivy:latest` by default. Override
 so a scanner outage or vulnerability finding is reported without failing the
 publish job.
 
+GitHub Actions also runs the advisory `Published image analysis` workflow for
+version-like tag pushes. It waits for the same Semaphore release status through
+`scripts/ci/release_status.sh --wait`, then analyzes the exact public Docker Hub
+tag with Dive and Docker Scout without rebuilding or publishing it. Dive reports
+layer efficiency in the workflow log. Scout reports fixable critical and high
+vulnerabilities and base-image recommendations in the job summary, and uploads
+SARIF to GitHub code scanning when that feature is available. Operators can
+rerun the workflow manually for an existing version tag. Scanner findings and
+SARIF upload failures remain advisory and do not change the completed release.
+
 If the local Docker build is not practical, still run the shell test and review
 the Dockerfile diff carefully. The real build happens in Semaphore. After
 propagating Dockerfile behavior to supported PHP branches, run
@@ -311,6 +321,7 @@ machinery:
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
+| Review a published image in GitHub | `Published image analysis` Actions workflow |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply] [--approve-contract-change]` |

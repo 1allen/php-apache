@@ -57,6 +57,13 @@ Keep the scan policy in `scripts/ci/trivy_scan.sh` so the behavior follows the
 image publish path across CI providers. Semaphore may expose it as a separate
 post-publish block, but the provider adapter should not own the scan policy.
 
+A GitHub Actions adapter may wait for that canonical Semaphore status and
+analyze the resulting public version tag with Dive and Docker Scout. This is a
+post-publish reporting path, not another build or publication path. Keep it
+advisory, restrict it to version-like tags, and use Scout's fixable critical and
+high findings plus SARIF as additional review surfaces rather than replacing
+the provider-neutral Trivy scan.
+
 ## Measure Registry-Compressed Image Size
 
 Image cleanup is measured with Docker Hub's compressed linux/amd64 manifest

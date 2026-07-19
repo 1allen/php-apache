@@ -22,6 +22,7 @@ DECISIONS_PATH="$ROOT_DIR/docs/decisions.md"
 SEMAPHORE_PATH="$ROOT_DIR/.semaphore/semaphore.yml"
 SEMAPHORE_PUBLISH_PATH="$ROOT_DIR/.semaphore/publish.yml"
 GITHUB_CLEANUP_PATH="$ROOT_DIR/.github/workflows/docker-hub-cleanup.yml"
+GITHUB_IMAGE_ANALYSIS_PATH="$ROOT_DIR/.github/workflows/image-analysis.yml"
 RELEASE_REF_PATH="$ROOT_DIR/scripts/lib/release_ref.sh"
 IMAGE_CONTRACT_PATH="$ROOT_DIR/scripts/lib/image_contract.sh"
 GIT_WORKTREE_PATH="$ROOT_DIR/scripts/lib/git_worktree.sh"
@@ -483,6 +484,26 @@ assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'push:'
 assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'pull_request:'
 assert_file_not_contains "$GITHUB_CLEANUP_PATH" 'schedule:'
 assert_file_not_contains "$SEMAPHORE_PATH" 'pipeline_file: cleanup.yml'
+
+[[ -f "$GITHUB_IMAGE_ANALYSIS_PATH" ]] || {
+    echo "Missing GitHub Actions image analysis workflow: $GITHUB_IMAGE_ANALYSIS_PATH" >&2
+    exit 1
+}
+
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'workflow_dispatch:'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "tags:"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "- '*.*'"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'security-events: write'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/release_status.sh --wait'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@481412c8b8de36d0f79e85aa382c60397466feb6'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'command: cves,recommendations'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-severities: critical,high'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'only-fixed: true'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sarif-file: docker-scout.sarif'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker build'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker push'
 
 ruby - "$SEMAPHORE_PATH" "$SEMAPHORE_PUBLISH_PATH" <<'RUBY'
 require "yaml"
