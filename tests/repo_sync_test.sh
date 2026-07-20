@@ -626,7 +626,14 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/wait_for_pub
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" '--updated-after "$PUSHED_AT"'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" '--digest-file "$DIGEST_FILE"'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "ref=$IMAGE_REPOSITORY@$digest"'
-assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'MaxymVlasov/dive-action@'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'DIVE_IMAGE: ghcr.io/wagoodman/dive:v0.13.1@sha256:f1886e6c32c094fc41a623c1989f5cb3e48aa766da5f0be233f911fc1d85ce10'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker run --pull=always'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dive_status=${PIPESTATUS[0]}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "echo '## Dive layer efficiency'"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'cat "$clean_report"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'exit "$dive_status"'
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github-token:'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@481412c8b8de36d0f79e85aa382c60397466feb6'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'command: cves,recommendations'
@@ -665,7 +672,7 @@ action_pin_output="$(
     CURL_BIN="$TMP_ACTION_PINS/bin/curl" \
         bash "$CI_VERIFY_GITHUB_ACTION_PINS_SCRIPT_PATH" "$GITHUB_IMAGE_ANALYSIS_PATH"
 )"
-assert_contains "$action_pin_output" 'Verified 4 GitHub Action commit pins'
+assert_contains "$action_pin_output" 'Verified 3 GitHub Action commit pins'
 
 sed 's/7188fc363630916deb702c7fdcf4e481b751f97a/0000000000000000000000000000000000000000/' \
     "$GITHUB_IMAGE_ANALYSIS_PATH" > "$TMP_ACTION_PINS/invalid.yml"

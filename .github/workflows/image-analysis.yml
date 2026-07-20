@@ -77,9 +77,30 @@ jobs:
       - name: Analyze image layers with Dive
         id: dive
         continue-on-error: true
-        uses: MaxymVlasov/dive-action@9bfaea6c0b1e49111459b2cb3f9275fa4094a63e # v2.0.1
-        with:
-          image: ${{ steps.published.outputs.ref }}
+        env:
+          DIVE_IMAGE: ghcr.io/wagoodman/dive:v0.13.1@sha256:f1886e6c32c094fc41a623c1989f5cb3e48aa766da5f0be233f911fc1d85ce10
+          IMAGE_REF: ${{ steps.published.outputs.ref }}
+        run: |
+          raw_report="$RUNNER_TEMP/dive-report.txt"
+          clean_report="$RUNNER_TEMP/dive-report-clean.txt"
+          set +e
+          docker run --pull=always \
+            -e CI=true \
+            -e DOCKER_API_VERSION=1.45 \
+            --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$DIVE_IMAGE" "$IMAGE_REF" 2>&1 | tee "$raw_report"
+          dive_status=${PIPESTATUS[0]}
+          set -e
+          sed -E $'s/\x1B\\[[0-9;]*[mK]//g' "$raw_report" > "$clean_report"
+          {
+            echo '## Dive layer efficiency'
+            echo
+            echo '```text'
+            cat "$clean_report"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$dive_status"
       - name: Require Docker Scout credentials
         env:
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -123,5 +144,5 @@ jobs:
             echo "- Docker Scout step: $SCOUT_OUTCOME"
             echo "- SARIF upload step: $SARIF_OUTCOME"
             echo
-            echo 'Dive details are available in its step log; Scout findings are shown above and in GitHub code scanning when SARIF upload is available.'
+          echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
           } >> "$GITHUB_STEP_SUMMARY"

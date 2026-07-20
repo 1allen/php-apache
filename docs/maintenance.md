@@ -260,7 +260,8 @@ version-like tag pushes. It waits for the same Semaphore release status through
 image updated after the tag-push event. The workflow captures the registry
 manifest digest and analyzes the immutable `name@sha256:...` reference with
 Dive and Docker Scout without rebuilding or publishing it. Dive reports layer
-efficiency in the workflow log. Scout reports fixable critical and high
+efficiency, wasted bytes, inefficient files, and threshold results in the job
+summary as well as the workflow log. Scout reports fixable critical and high
 vulnerabilities and base-image recommendations in the job summary, and uploads
 SARIF to GitHub code scanning when that feature is available. Operators can
 rerun the workflow manually for an existing version tag. Manual runs check out
