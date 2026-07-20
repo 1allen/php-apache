@@ -63,15 +63,17 @@ updated the public version tag after the triggering Git tag push before running
 Dive and Docker Scout. The root Semaphore status covers release preflight, not
 completion of the promoted publish pipeline. This registry verification closes
 that gap without another build or publication path. Manual analysis of an
-already-published tag skips the historical Semaphore-status wait. Keep the
-analysis advisory, restrict it to version-like tags, and use Scout's fixable
-critical and high findings plus SARIF associated with the matching `phpXX`
-source branch as additional review surfaces rather than replacing the
-provider-neutral Trivy scan. Authenticate Scout with the existing protected
-`DOCKER_HUB_TOKEN` Actions secret used for Docker Hub access rather than
-requiring operators to maintain a second registry credential. Capture Docker
-Hub's manifest digest and scan the immutable digest reference so a republished
-tag cannot change the target after the readiness check.
+already-published tag skips the historical Semaphore-status wait and checks out
+the default branch for the current analysis scripts; the requested tag still
+supplies the analyzed image version and source commit. Keep the analysis
+advisory, restrict it to version-like tags, and use Scout's fixable critical and
+high findings plus SARIF associated with the matching `phpXX` source branch as
+additional review surfaces rather than replacing the provider-neutral Trivy
+scan. Authenticate Scout with the existing protected `DOCKER_HUB_TOKEN`
+Actions secret used for Docker Hub access rather than requiring operators to
+maintain a second registry credential. Capture Docker Hub's manifest digest and
+scan the immutable digest reference so a republished tag cannot change the
+target after the readiness check.
 
 ## Measure Registry-Compressed Image Size
 

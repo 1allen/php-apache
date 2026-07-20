@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.ref }}
       - name: Resolve published image
         id: image
         env:
@@ -48,7 +48,7 @@ jobs:
           echo "namespace=$DEFAULT_DOCKER_USERNAME" >> "$GITHUB_OUTPUT"
           echo "repository=$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse "refs/tags/$REQUESTED_TAG^{commit}")" >> "$GITHUB_OUTPUT"
       - name: Wait for Semaphore preflight
         if: github.event_name == 'push'
         env:

@@ -613,9 +613,11 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "- '*.*'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'security-events: write'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'timeout-minutes: 70'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'persist-credentials: false'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "ref: \${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.ref }}"
+assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "ref: \${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source scripts/lib/release_ref.sh'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")'
-assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha=$(git rev-parse HEAD)'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha=$(git rev-parse "refs/tags/$REQUESTED_TAG^{commit}")'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "if: github.event_name == 'push'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'bash scripts/ci/release_status.sh --wait'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'RELEASE_TAG: ${{ steps.image.outputs.tag }}'

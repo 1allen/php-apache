@@ -263,12 +263,14 @@ Dive and Docker Scout without rebuilding or publishing it. Dive reports layer
 efficiency in the workflow log. Scout reports fixable critical and high
 vulnerabilities and base-image recommendations in the job summary, and uploads
 SARIF to GitHub code scanning when that feature is available. Operators can
-rerun the workflow manually for an existing version tag; manual runs require
-the tag to exist but do not require a newer publication or a historical
-Semaphore status. SARIF is associated with the matching supported `phpXX`
-source branch because GitHub code scanning does not accept a tag ref for this
-upload. Scanner findings and SARIF upload failures remain advisory and do not
-change the completed release.
+rerun the workflow manually for an existing version tag. Manual runs check out
+the default branch so they use the current analysis scripts, while the
+requested tag supplies the image version and source commit; they require the
+tag to exist but do not require a newer publication or a historical Semaphore
+status. SARIF is associated with the matching supported `phpXX` source branch
+because GitHub code scanning does not accept a tag ref for this upload. Scanner
+findings and SARIF upload failures remain advisory and do not change the
+completed release.
 Docker Scout authentication reuses the existing protected `DOCKER_HUB_TOKEN`
 Actions secret used by the cleanup workflow; operators do not need to maintain
 a separate Scout credential.
