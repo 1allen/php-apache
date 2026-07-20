@@ -82,8 +82,8 @@ jobs:
           image: ${{ steps.published.outputs.ref }}
       - name: Require Docker Scout credentials
         env:
-          DOCKER_SCOUT_TOKEN: ${{ secrets.DOCKER_SCOUT_TOKEN }}
-        run: test -n "$DOCKER_SCOUT_TOKEN"
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: test -n "$DOCKER_HUB_TOKEN"
       - name: Analyze fixable vulnerabilities with Docker Scout
         id: scout
         continue-on-error: true
@@ -91,7 +91,7 @@ jobs:
         with:
           command: cves,recommendations
           dockerhub-user: ${{ steps.image.outputs.namespace }}
-          dockerhub-password: ${{ secrets.DOCKER_SCOUT_TOKEN }}
+          dockerhub-password: ${{ secrets.DOCKER_HUB_TOKEN }}
           image: registry://${{ steps.published.outputs.ref }}
           only-severities: critical,high
           only-fixed: true

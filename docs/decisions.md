@@ -67,11 +67,11 @@ already-published tag skips the historical Semaphore-status wait. Keep the
 analysis advisory, restrict it to version-like tags, and use Scout's fixable
 critical and high findings plus SARIF associated with the matching `phpXX`
 source branch as additional review surfaces rather than replacing the
-provider-neutral Trivy scan. Authenticate Scout with a dedicated read-only
-`DOCKER_SCOUT_TOKEN`; do not expose the deletion-capable Docker Hub cleanup
-credential to third-party analysis actions. Capture Docker Hub's manifest
-digest and scan the immutable digest reference so a republished tag cannot
-change the target after the readiness check.
+provider-neutral Trivy scan. Authenticate Scout with the existing protected
+`DOCKER_HUB_TOKEN` Actions secret used for Docker Hub access rather than
+requiring operators to maintain a second registry credential. Capture Docker
+Hub's manifest digest and scan the immutable digest reference so a republished
+tag cannot change the target after the readiness check.
 
 ## Measure Registry-Compressed Image Size
 
