@@ -73,8 +73,9 @@ scan. Authenticate Scout with the existing protected `DOCKER_HUB_TOKEN`
 Actions secret used for Docker Hub access rather than requiring operators to
 maintain a second registry credential. Capture Docker Hub's manifest digest and
 scan the immutable digest reference so a republished tag cannot change the
-target after the readiness check. Capture Dive's complete text report in the
-GitHub job summary because tag and manual runs have no pull request where a
+target after the readiness check. Show Dive's key metrics and advisory verdict
+directly in the GitHub job summary, with its complete text report in a collapsed
+details section, because tag and manual runs have no pull request where a
 third-party action can post its report.
 
 ## Measure Registry-Compressed Image Size

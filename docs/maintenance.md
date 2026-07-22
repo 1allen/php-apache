@@ -259,11 +259,13 @@ version-like tag pushes. It waits for the same Semaphore release status through
 `scripts/ci/wait_for_published_image.sh` to wait until Docker Hub exposes an
 image updated after the tag-push event. The workflow captures the registry
 manifest digest and analyzes the immutable `name@sha256:...` reference with
-Dive and Docker Scout without rebuilding or publishing it. Dive reports layer
-efficiency, wasted bytes, inefficient files, and threshold results in the job
-summary as well as the workflow log. Scout reports fixable critical and high
-vulnerabilities and base-image recommendations in the job summary, and uploads
-SARIF to GitHub code scanning when that feature is available. Operators can
+Dive and Docker Scout without rebuilding or publishing it. Dive shows its image
+digest, efficiency, wasted bytes, user-wasted ratio, and advisory threshold
+result directly in the job summary; its full inefficient-file report is
+collapsed underneath and remains available in the workflow log. Scout reports
+fixable critical and high vulnerabilities and base-image recommendations in the
+job summary, and uploads SARIF to GitHub code scanning when that feature is
+available. Operators can
 rerun the workflow manually for an existing version tag. Manual runs check out
 the default branch so they use the current analysis scripts, while the
 requested tag supplies the image version and source commit; they require the

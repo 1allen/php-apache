@@ -631,7 +631,13 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'DIVE_IMAGE: ghcr.io/wagoodma
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker run --pull=always'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'dive_status=${PIPESTATUS[0]}'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "echo '## Dive layer efficiency'"
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "- Efficiency: $dive_efficiency"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "- Wasted bytes: $dive_wasted_bytes"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "- User-wasted ratio: $dive_wasted_ratio"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'echo "- Threshold evaluation: $dive_verdict"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "echo '<details><summary>Full Dive report</summary>'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'cat "$clean_report"'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" "echo '</details>'"
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'exit "$dive_status"'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github-token:'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3'

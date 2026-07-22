@@ -93,12 +93,32 @@ jobs:
           dive_status=${PIPESTATUS[0]}
           set -e
           sed -E $'s/\x1B\\[[0-9;]*[mK]//g' "$raw_report" > "$clean_report"
+          dive_efficiency="$(sed -n 's/^[[:space:]]*efficiency:[[:space:]]*//p' "$clean_report")"
+          dive_wasted_bytes="$(sed -n 's/^[[:space:]]*wastedBytes:[[:space:]]*//p' "$clean_report")"
+          dive_wasted_ratio="$(sed -n 's/^[[:space:]]*userWastedPercent:[[:space:]]*//p' "$clean_report")"
+          dive_efficiency="${dive_efficiency:-unavailable}"
+          dive_wasted_bytes="${dive_wasted_bytes:-unavailable}"
+          dive_wasted_ratio="${dive_wasted_ratio:-unavailable}"
+          dive_verdict=passed
+          if ((dive_status != 0)); then
+            dive_verdict="advisory threshold exceeded (exit code $dive_status)"
+          fi
           {
             echo '## Dive layer efficiency'
+            echo
+            echo "- Image: \`$IMAGE_REF\`"
+            echo "- Efficiency: $dive_efficiency"
+            echo "- Wasted bytes: $dive_wasted_bytes"
+            echo "- User-wasted ratio: $dive_wasted_ratio"
+            echo "- Threshold evaluation: $dive_verdict"
+            echo
+            echo '<details><summary>Full Dive report</summary>'
             echo
             echo '```text'
             cat "$clean_report"
             echo '```'
+            echo
+            echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$dive_status"
       - name: Require Docker Scout credentials
