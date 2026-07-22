@@ -57,6 +57,27 @@ Keep the scan policy in `scripts/ci/trivy_scan.sh` so the behavior follows the
 image publish path across CI providers. Semaphore may expose it as a separate
 post-publish block, but the provider adapter should not own the scan policy.
 
+A GitHub Actions adapter may wait for that canonical Semaphore status and
+then verify through `scripts/ci/wait_for_published_image.sh` that Docker Hub has
+updated the public version tag after the triggering Git tag push before running
+Dive and Docker Scout. The root Semaphore status covers release preflight, not
+completion of the promoted publish pipeline. This registry verification closes
+that gap without another build or publication path. Manual analysis of an
+already-published tag skips the historical Semaphore-status wait and checks out
+the default branch for the current analysis scripts; the requested tag still
+supplies the analyzed image version and source commit. Keep the analysis
+advisory, restrict it to version-like tags, and use Scout's fixable critical and
+high findings plus SARIF associated with the matching `phpXX` source branch as
+additional review surfaces rather than replacing the provider-neutral Trivy
+scan. Authenticate Scout with the existing protected `DOCKER_HUB_TOKEN`
+Actions secret used for Docker Hub access rather than requiring operators to
+maintain a second registry credential. Capture Docker Hub's manifest digest and
+scan the immutable digest reference so a republished tag cannot change the
+target after the readiness check. Show Dive's key metrics and advisory verdict
+directly in the GitHub job summary, with its complete text report in a collapsed
+details section, because tag and manual runs have no pull request where a
+third-party action can post its report.
+
 ## Measure Registry-Compressed Image Size
 
 Image cleanup is measured with Docker Hub's compressed linux/amd64 manifest
@@ -123,9 +144,10 @@ pinned ImageMagick, bundled imagick linked against that build, and tested WebP
 support. The base also retains `install-php-extensions` as a stable interface
 used by downstream images; the installer is tooling, not an application-specific
 extension. Unrelated PHP extensions and standalone image, media, and database
-command-line tools are application choices. Keep extensions such as GMP and tools such as `jpegoptim`, `webp`,
-`ffmpeg`, and `mariadb-client` in downstream Dockerfiles so every consumer does
-not inherit their dependencies or release behavior.
+command-line tools are application choices. Keep application-specific
+extensions and tools such as `jpegoptim`, `webp`, `ffmpeg`, and
+`mariadb-client` in downstream Dockerfiles so every consumer does not inherit
+their dependencies or release behavior.
 
 WebP format support is different from the `webp` CLI. Build ImageMagick with
 `libwebp-dev`, install its runtime libraries explicitly in the final stage, and
