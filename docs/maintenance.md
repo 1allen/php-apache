@@ -253,6 +253,31 @@ block after `docker push`. It uses `aquasec/trivy:latest` by default. Override
 so a scanner outage or vulnerability finding is reported without failing the
 publish job.
 
+GitHub Actions also runs the advisory `Published image analysis` workflow for
+version-like tag pushes. It waits for the same Semaphore release status through
+`scripts/ci/release_status.sh --wait`, then uses
+`scripts/ci/wait_for_published_image.sh` to wait until Docker Hub exposes an
+image updated after the tag-push event. The workflow captures the registry
+manifest digest and analyzes the immutable `name@sha256:...` reference with
+Dive and Docker Scout without rebuilding or publishing it. Dive shows its image
+digest, efficiency, wasted bytes, user-wasted ratio, and advisory threshold
+result directly in the job summary; its full inefficient-file report is
+collapsed underneath and remains available in the workflow log. Scout reports
+fixable critical and high vulnerabilities and base-image recommendations in the
+job summary, and uploads SARIF to GitHub code scanning when that feature is
+available. Operators can
+rerun the workflow manually for an existing version tag. Manual runs check out
+the default branch so they use the current analysis scripts, while the
+requested tag supplies the image version and source commit; they require the
+tag to exist but do not require a newer publication or a historical Semaphore
+status. SARIF is associated with the matching supported `phpXX` source branch
+because GitHub code scanning does not accept a tag ref for this upload. Scanner
+findings and SARIF upload failures remain advisory and do not change the
+completed release.
+Docker Scout authentication reuses the existing protected `DOCKER_HUB_TOKEN`
+Actions secret used by the cleanup workflow; operators do not need to maintain
+a separate Scout credential.
+
 If the local Docker build is not practical, still run the shell test and review
 the Dockerfile diff carefully. The real build happens in Semaphore. After
 propagating Dockerfile behavior to supported PHP branches, run
@@ -310,7 +335,10 @@ machinery:
 | Verify the Dockerfile contract | `bash scripts/repo_sync.sh verify-image-tooling [branches...]` |
 | Build or publish an image | `bash scripts/ci/docker_build.sh` through a thin CI adapter |
 | Check or wait for release pipelines | `bash scripts/ci/release_status.sh [--wait] [refs...]` |
+| Wait for a published Docker Hub tag | `bash scripts/ci/wait_for_published_image.sh [--wait] tag` |
 | Scan a published image | `bash scripts/ci/trivy_scan.sh` |
+| Verify GitHub Action commit pins | `bash scripts/ci/verify_github_action_pins.sh .github/workflows/image-analysis.yml` |
+| Review a published image in GitHub | `Published image analysis` Actions workflow |
 | Measure published image size | `bash scripts/image_metrics.sh [tags...]` |
 | Retire branch-named Docker Hub tags | `bash scripts/docker_hub_cleanup.sh [--apply]` or the manual GitHub Actions workflow |
 | Move supported semver tags | `bash scripts/tags_update.sh [--apply] [--approve-contract-change]` |

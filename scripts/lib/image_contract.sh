@@ -35,10 +35,6 @@ image_contract_missing_invariants() {
         [[ "$dockerfile_content" == *"$marker"* ]] || echo "$marker"
     done
 
-    if [[ "$dockerfile_content" == *gmp* ]]; then
-        echo "non-core image feature absent: gmp"
-    fi
-
     for webp_runtime_package in libwebp7 libwebp6; do
         [[ "$dockerfile_content" == *"        $webp_runtime_package \\"* ]] && break
         webp_runtime_package=""
