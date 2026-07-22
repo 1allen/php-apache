@@ -1,0 +1,168 @@
+name: Published image analysis
+
+on:
+  push:
+    tags:
+      - '*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version tag to analyze (for example, 8.5)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: image-analysis-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Analyze published image
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.default_branch || github.ref }}
+      - name: Resolve published image
+        id: image
+        env:
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          source config/php-branches.conf
+          source scripts/lib/release_ref.sh
+          if [[ ! "$REQUESTED_TAG" =~ $PUBLISH_TAG_PATTERN ]]; then
+            echo "Refusing non-version tag: $REQUESTED_TAG" >&2
+            exit 1
+          fi
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "namespace=$DEFAULT_DOCKER_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "repository=$DEFAULT_DOCKER_USERNAME/$DEFAULT_IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "source_branch=$(release_ref_version_to_branch "$REQUESTED_TAG")" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse "refs/tags/$REQUESTED_TAG^{commit}")" >> "$GITHUB_OUTPUT"
+      - name: Wait for Semaphore preflight
+        if: github.event_name == 'push'
+        env:
+          RELEASE_TAG: ${{ steps.image.outputs.tag }}
+        run: bash scripts/ci/release_status.sh --wait "$RELEASE_TAG"
+      - name: Wait for Docker Hub publication
+        id: published
+        env:
+          DIGEST_FILE: ${{ runner.temp }}/published-image.digest
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          PUSHED_AT: ${{ github.event.repository.pushed_at }}
+        run: |
+          wait_args=(--wait --digest-file "$DIGEST_FILE")
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            wait_args+=(--updated-after "$PUSHED_AT")
+          fi
+          bash scripts/ci/wait_for_published_image.sh \
+            "${wait_args[@]}" "$IMAGE_TAG"
+          digest="$(<"$DIGEST_FILE")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Invalid published image digest: $digest" >&2
+            exit 1
+          }
+          echo "ref=$IMAGE_REPOSITORY@$digest" >> "$GITHUB_OUTPUT"
+      - name: Analyze image layers with Dive
+        id: dive
+        continue-on-error: true
+        env:
+          DIVE_IMAGE: ghcr.io/wagoodman/dive:v0.13.1@sha256:f1886e6c32c094fc41a623c1989f5cb3e48aa766da5f0be233f911fc1d85ce10
+          IMAGE_REF: ${{ steps.published.outputs.ref }}
+        run: |
+          raw_report="$RUNNER_TEMP/dive-report.txt"
+          clean_report="$RUNNER_TEMP/dive-report-clean.txt"
+          set +e
+          docker run --pull=always \
+            -e CI=true \
+            -e DOCKER_API_VERSION=1.45 \
+            --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$DIVE_IMAGE" "$IMAGE_REF" 2>&1 | tee "$raw_report"
+          dive_status=${PIPESTATUS[0]}
+          set -e
+          sed -E $'s/\x1B\\[[0-9;]*[mK]//g' "$raw_report" > "$clean_report"
+          dive_efficiency="$(sed -n 's/^[[:space:]]*efficiency:[[:space:]]*//p' "$clean_report")"
+          dive_wasted_bytes="$(sed -n 's/^[[:space:]]*wastedBytes:[[:space:]]*//p' "$clean_report")"
+          dive_wasted_ratio="$(sed -n 's/^[[:space:]]*userWastedPercent:[[:space:]]*//p' "$clean_report")"
+          dive_efficiency="${dive_efficiency:-unavailable}"
+          dive_wasted_bytes="${dive_wasted_bytes:-unavailable}"
+          dive_wasted_ratio="${dive_wasted_ratio:-unavailable}"
+          dive_verdict=passed
+          if ((dive_status != 0)); then
+            dive_verdict="advisory threshold exceeded (exit code $dive_status)"
+          fi
+          {
+            echo '## Dive layer efficiency'
+            echo
+            echo "- Image: \`$IMAGE_REF\`"
+            echo "- Efficiency: $dive_efficiency"
+            echo "- Wasted bytes: $dive_wasted_bytes"
+            echo "- User-wasted ratio: $dive_wasted_ratio"
+            echo "- Threshold evaluation: $dive_verdict"
+            echo
+            echo '<details><summary>Full Dive report</summary>'
+            echo
+            echo '```text'
+            cat "$clean_report"
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$dive_status"
+      - name: Require Docker Scout credentials
+        env:
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+        run: test -n "$DOCKER_HUB_TOKEN"
+      - name: Analyze fixable vulnerabilities with Docker Scout
+        id: scout
+        continue-on-error: true
+        uses: docker/scout-action@bacf462e8d090c09660de30a6ccc718035f961e3 # v1
+        with:
+          command: cves,recommendations
+          dockerhub-user: ${{ steps.image.outputs.namespace }}
+          dockerhub-password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          image: registry://${{ steps.published.outputs.ref }}
+          only-severities: critical,high
+          only-fixed: true
+          sarif-file: docker-scout.sarif
+          summary: true
+          write-comment: false
+      - name: Upload Docker Scout results
+        id: sarif
+        if: always() && hashFiles('docker-scout.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: docker-scout.sarif
+          ref: refs/heads/${{ steps.image.outputs.source_branch }}
+          sha: ${{ steps.image.outputs.sha }}
+      - name: Summarize advisory analysis
+        if: always()
+        env:
+          DIVE_OUTCOME: ${{ steps.dive.outcome }}
+          IMAGE_REF: ${{ steps.published.outputs.ref }}
+          SARIF_OUTCOME: ${{ steps.sarif.outcome }}
+          SCOUT_OUTCOME: ${{ steps.scout.outcome }}
+        run: |
+          {
+            echo '## Published image advisory analysis'
+            echo
+            echo "- Image: \`$IMAGE_REF\`"
+            echo "- Dive step: $DIVE_OUTCOME"
+            echo "- Docker Scout step: $SCOUT_OUTCOME"
+            echo "- SARIF upload step: $SARIF_OUTCOME"
+            echo
+          echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
+          } >> "$GITHUB_STEP_SUMMARY"

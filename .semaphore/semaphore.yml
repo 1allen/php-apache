@@ -19,6 +19,7 @@ blocks:
       jobs:
         - name: docker build
           commands:
+            - bash scripts/ci/verify_github_action_pins.sh .github/workflows/image-analysis.yml
             - CI_GIT_BRANCH="${SEMAPHORE_GIT_BRANCH:-}" CI_GIT_TAG="${SEMAPHORE_GIT_TAG_NAME:-}" CI_GIT_REF_TYPE="${SEMAPHORE_GIT_REF_TYPE:-}" bash scripts/ci/docker_build.sh
   - name: verify release source
     run:

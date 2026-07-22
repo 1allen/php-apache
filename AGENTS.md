@@ -25,9 +25,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   builder/runtime ABI compatibility pins.
 - `imagick` is a bundled feature. Keep the explicit pinned PECL source build so
   it links against custom ImageMagick under `/usr/local`.
-- Keep application-specific PHP extensions, including GMP, in downstream
-  images. Keep `install-php-extensions` in the base image as a supported
-  downstream customization interface.
+- Keep application-specific PHP extensions in downstream images. Keep
+  `install-php-extensions` in the base image as a supported downstream
+  customization interface.
 - Keep `docker-php-ext-configure imagick --with-imagick=/usr/local`,
   SHA-256 verification for downloaded ImageMagick and PECL `imagick` archives,
   and `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` or equivalent configure-time
@@ -50,6 +50,12 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   preview the exact commands and effects and compare them with the maintenance
   runbook. If the documented route or its effect is unclear, stop and ask
   instead of inventing a workflow.
+- Treat `scripts/lib/image_contract.sh` as core consumer-contract policy.
+  Never remove or reclassify a required capability and then rewrite its tests
+  and documentation to match without the user's explicit approval of that exact
+  contract change. Adjacent cleanup approval is not approval for a breaking
+  contract change. Never use `--approve-contract-change` unless the user
+  explicitly approved the displayed policy diff.
 - Do not move version tags after documentation, test, or CI-adapter-only changes.
   Move tags only when release image inputs changed or an explicit rebuild is
   intended; branch synchronization does not automatically imply publication.
