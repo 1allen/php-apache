@@ -25,9 +25,9 @@ for the runbook and [docs/decisions.md](docs/decisions.md) for rationale.
   builder/runtime ABI compatibility pins.
 - `imagick` is a bundled feature. Keep the explicit pinned PECL source build so
   it links against custom ImageMagick under `/usr/local`.
-- Keep application-specific PHP extensions, including GMP, in downstream
-  images. Keep `install-php-extensions` in the base image as a supported
-  downstream customization interface.
+- Keep application-specific PHP extensions in downstream images. Keep
+  `install-php-extensions` in the base image as a supported downstream
+  customization interface.
 - Keep `docker-php-ext-configure imagick --with-imagick=/usr/local`,
   SHA-256 verification for downloaded ImageMagick and PECL `imagick` archives,
   and `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` or equivalent configure-time
