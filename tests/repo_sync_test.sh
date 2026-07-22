@@ -467,7 +467,6 @@ assert_file_contains "$DOCKERFILE_PATH" "find /tmp/imgck/usr/local/lib -type f"
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --chown=$UID:$GID --from=imagemagick-builder /tmp/imgck/usr/local/ /usr/local/'
 assert_file_contains "$DOCKERFILE_PATH" 'FROM ${PHP_EXTENSION_INSTALLER_IMAGE} AS php-extension-installer'
 assert_file_contains "$DOCKERFILE_PATH" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
-assert_file_not_contains "$DOCKERFILE_PATH" 'gmp'
 assert_file_contains "$DOCKERFILE_PATH" 'docker-php-ext-configure imagick --with-imagick=/usr/local'
 assert_file_contains "$DOCKERFILE_PATH" '--without-x'
 assert_file_contains "$DOCKERFILE_PATH" 'libwebp7'
@@ -491,7 +490,6 @@ assert_file_contains "$README_PATH" '## Features'
 assert_file_contains "$README_PATH" '## Useful Build Improvements'
 assert_file_contains "$README_PATH" 'newer pinned ImageMagick built under `/usr/local`'
 assert_file_contains "$README_PATH" 'with verified WebP support'
-assert_file_not_contains "$README_PATH" 'bundled `gmp`'
 assert_file_contains "$README_PATH" '`install-php-extensions` available'
 assert_file_contains "$README_PATH" '## Supported Images'
 assert_file_contains "$README_PATH" '## Quick Start'
@@ -795,9 +793,9 @@ broken_contract="${dockerfile_content/COPY --from=php-extension-installer \/usr\
 contract_missing="$(image_contract_missing_invariants "$broken_contract")"
 assert_contains "$contract_missing" 'COPY --from=php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/'
 
-broken_contract="$dockerfile_content"$'\nRUN install-php-extensions gmp\n'
-contract_missing="$(image_contract_missing_invariants "$broken_contract")"
-assert_contains "$contract_missing" 'non-core image feature absent: gmp'
+assert_file_not_contains "$IMAGE_CONTRACT_PATH" 'gmp'
+assert_file_not_contains "$AGENTS_PATH" 'GMP'
+assert_file_not_contains "$DECISIONS_PATH" 'GMP'
 
 buster_contract="${dockerfile_content/libwebp7/libwebp6}"
 contract_missing="$(image_contract_missing_invariants "$buster_contract")"

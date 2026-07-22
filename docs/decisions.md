@@ -144,9 +144,10 @@ pinned ImageMagick, bundled imagick linked against that build, and tested WebP
 support. The base also retains `install-php-extensions` as a stable interface
 used by downstream images; the installer is tooling, not an application-specific
 extension. Unrelated PHP extensions and standalone image, media, and database
-command-line tools are application choices. Keep extensions such as GMP and tools such as `jpegoptim`, `webp`,
-`ffmpeg`, and `mariadb-client` in downstream Dockerfiles so every consumer does
-not inherit their dependencies or release behavior.
+command-line tools are application choices. Keep application-specific
+extensions and tools such as `jpegoptim`, `webp`, `ffmpeg`, and
+`mariadb-client` in downstream Dockerfiles so every consumer does not inherit
+their dependencies or release behavior.
 
 WebP format support is different from the `webp` CLI. Build ImageMagick with
 `libwebp-dev`, install its runtime libraries explicitly in the final stage, and
