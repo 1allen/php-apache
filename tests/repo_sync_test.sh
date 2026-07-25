@@ -781,6 +781,33 @@ contract_missing="$(image_contract_missing_invariants "$dockerfile_content")"
     exit 1
 }
 
+imagick_build_layer="$(
+    awk '
+        function inspect_instruction() {
+            if (instruction ~ /^RUN / &&
+                instruction ~ /\n        libmagickwand-dev;/ &&
+                instruction ~ /docker-php-ext-install -j.* imagick/ &&
+                instruction ~ /apt-get purge -y libmagickwand-dev/) {
+                print instruction
+            }
+        }
+
+        /^[[:upper:]][[:upper:]]*[[:space:]]/ {
+            inspect_instruction()
+            instruction = $0
+            next
+        }
+
+        { instruction = instruction "\n" $0 }
+
+        END { inspect_instruction() }
+    ' "$DOCKERFILE_PATH"
+)"
+[[ -n "$imagick_build_layer" ]] || {
+    echo "Expected imagick build dependencies, compilation, and purge in one RUN layer" >&2
+    exit 1
+}
+
 broken_contract="${dockerfile_content/make install DESTDIR=\/tmp\/imgck/make install}"
 contract_missing="$(image_contract_missing_invariants "$broken_contract")"
 assert_contains "$contract_missing" 'make install DESTDIR=/tmp/imgck'
