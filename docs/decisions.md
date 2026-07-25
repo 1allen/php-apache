@@ -31,6 +31,23 @@ cache until measured build timings demonstrate that the remaining compilation
 cost justifies the storage and credential overhead. Published semver images are
 both the consumer artifact and the initial read-only cache source.
 
+The 2026-07-23 supported-tag rollout measured cold Docker builds of 110-143
+seconds for PHP 8.1 through 8.5. Compiling ImageMagick consumed 78.5-105.8
+seconds of those builds, so a shared intermediate-stage cache could reduce
+aggregate CI compute. Keep that optimization deferred: the version builds run
+concurrently, so it offers little rollout wall-clock improvement, while a
+writable registry cache adds credentials, invalidation keys, storage cleanup,
+and builder/runtime ABI policy. Commit `09bef54` replaced the earlier
+target-plus-floating-`latest` cache approach with the current per-tag inline
+cache and explicitly avoided saved-image artifacts and a dedicated writable
+cache.
+
+Revisit shared caching only when build frequency, CI cost, or release latency
+justifies that operational complexity. Any implementation belongs in
+`scripts/ci/docker_build.sh`, not provider-specific CI YAML, and must distinguish
+incompatible builder/runtime ABIs. Do not create a one-off cache image or
+orchestration path.
+
 CI-provider-specific YAML should stay as a thin adapter. The stable interface is
 `scripts/ci/docker_build.sh` with normalized `CI_GIT_BRANCH`, `CI_GIT_TAG`, and
 `CI_GIT_REF_TYPE` inputs, because this project expects to move off Semaphore CI
