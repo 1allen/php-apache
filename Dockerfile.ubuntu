@@ -65,9 +65,7 @@ RUN set -eux; \
         libwebpdemux2 \
         libwebpmux3 \
         libmagickwand-dev; \
-    rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
     ldconfig /usr/local/lib; \
     ioncube_ini=/usr/local/etc/php/conf.d/00-ioncube.ini; \
     if [ -f "$ioncube_ini" ]; then \
