@@ -405,10 +405,11 @@ pull, or scan images, and size changes are not a release gate. Docker Hub's
 compressed size is intentionally different from `docker images` virtual size;
 do not mix the two metrics in one comparison.
 
-### Pending Image Layer Cleanup Canary
+### Image Layer Cleanup Canary
 
-Status as of 2026-07-26: approved for implementation through the gated PHP 8.5
-canary below.
+Status as of 2026-07-26: the PHP 8.5 canary passed. The equivalent Dockerfile
+behavior is present on `php80` through `php85`, but tags `8.0` through `8.4`
+remain at their pre-change commits pending explicit rollout approval.
 
 The published Dive reports showed that the final stage installs
 `libmagickwand-dev` and its development dependencies in one `RUN`, then compiles
@@ -473,6 +474,16 @@ The PHP 8.5 pre-change baseline is digest
 publish metrics were 20 seconds of cache preparation, 117 seconds of Docker
 build, 10 seconds of publish time, and 147 seconds total. Scout reported no
 fixable critical/high finding under the configured filter.
+
+The PHP 8.5 canary published digest
+`sha256:53c495c0d26aabdc6bd3b12d61c434a786bff14b743d2fcf9d36bfdecb480f9c`.
+Its compressed linux/amd64 size is 460,194,093 bytes, 36,264,146 bytes (7.30%)
+below the immediate pre-change image. Dive reported 97.2187% efficiency,
+47,838,586 wasted bytes, and a 3.6337% user-wasted ratio. Cache preparation
+took 19 seconds, the Docker build took 104 seconds, publishing took 10 seconds,
+and the total took 133 seconds. Docker Scout reported zero fixable
+critical/high findings. The corresponding **Published image analysis** run
+passed, so the canary met every gate above.
 
 ### Legacy Docker Tag Cleanup
 
