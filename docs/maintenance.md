@@ -405,6 +405,75 @@ pull, or scan images, and size changes are not a release gate. Docker Hub's
 compressed size is intentionally different from `docker images` virtual size;
 do not mix the two metrics in one comparison.
 
+### Pending Image Layer Cleanup Canary
+
+Status as of 2026-07-26: approved for implementation through the gated PHP 8.5
+canary below.
+
+The published Dive reports showed that the final stage installs
+`libmagickwand-dev` and its development dependencies in one `RUN`, then compiles
+PECL `imagick` and purges those packages in a later `RUN`. The later deletion
+does not reclaim bytes from the earlier immutable layer. For PHP 8.2 through
+8.5, the common 145-147 MB of uncompressed Dive waste includes about 88.4 MB of
+static archives, 19.9 MB of apt indexes, 14.4 MB of package-manager metadata,
+and 12.7 MB of development headers.
+
+Implement only the first-step cleanup:
+
+1. Keep the existing `imagemagick-builder` stage.
+2. On `latest`, merge the final-stage dependency installation and the existing
+   `imagick` download, verification, build, WebP checks, purge, autoremove, and
+   cleanup into one `RUN`. Preserve the command order and existing runtime
+   packages; this is a layer-boundary change, not a consumer-contract change.
+3. Do not replace the inherited PHP 8.0 `go-replace`, change PHP 8.0 support,
+   add a dedicated shared cache, or add a separate `imagick-builder` stage.
+4. Run the required `latest` checks:
+
+   ```bash
+   bash tests/repo_sync_test.sh
+   bash scripts/repo_sync.sh verify-image-tooling latest
+   ```
+
+5. Apply equivalent Dockerfile behavior intentionally to `php80` through
+   `php85`, preserving each branch's base PHP minor, builder/runtime ABI pins,
+   and archived-repository handling. Then run:
+
+   ```bash
+   bash scripts/repo_sync.sh verify-image-tooling
+   bash scripts/repo_sync.sh sync-shared
+   ```
+
+6. Preview and complete the normal branch synchronization and push through
+   `scripts/repo_sync.sh`; do not open a PR for this change. Do not move a tag as
+   an automatic consequence of branch synchronization.
+7. Use PHP 8.5 as the only canary publication. Preview the exact tag effect
+   before applying it:
+
+   ```bash
+   bash scripts/tags_update.sh php85
+   bash scripts/tags_update.sh --apply php85
+   bash scripts/ci/release_status.sh --wait 8.5
+   bash scripts/image_metrics.sh --format tsv 8.5
+   ```
+
+8. Inspect the corresponding **Published image analysis** GitHub Actions run.
+   Canary success requires all maintained contract and functionality checks,
+   no new fixable critical/high Scout finding, a lower Docker Hub compressed
+   size, a Dive user-wasted ratio below 10%, and no material cold-build-time
+   regression.
+9. Stop after reporting the PHP 8.5 before/after results. Obtain explicit user
+   approval before moving or rebuilding tags `8.0` through `8.4`. If Dive
+   remains at or above 10%, investigate the remaining inherited waste before
+   any wider rollout.
+
+The PHP 8.5 pre-change baseline is digest
+`sha256:b564ec022b2bd7ef76e7daad11c20f3a5c52cb4b40e1ef1e158c12f1b233590f`,
+496,458,239 compressed linux/amd64 bytes, 91.1160% Dive efficiency,
+144,721,459 wasted bytes, and a 10.1041% user-wasted ratio. Its 2026-07-23
+publish metrics were 20 seconds of cache preparation, 117 seconds of Docker
+build, 10 seconds of publish time, and 147 seconds total. Scout reported no
+fixable critical/high finding under the configured filter.
+
 ### Legacy Docker Tag Cleanup
 
 The retired Docker Hub tags have been removed. These were the branch-named tags
