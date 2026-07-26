@@ -93,13 +93,12 @@ scan the immutable digest reference so a republished tag cannot change the
 target after the readiness check. Show Dive's key metrics and advisory verdict
 directly in the GitHub job summary, with its complete text report in a collapsed
 details section, because tag and manual runs have no pull request where a
-third-party action can post its report. Also upsert a concise comment on the
-tag's source commit so operators can find the digest, compressed size, Dive
-metrics, Scout result count, and workflow link without mining logs. Keep the
-comment idempotent by tag, and isolate its `contents: write` permission in a
-small dependent job; the analysis job keeps only repository read and SARIF
-permissions. Dive thresholds and comment delivery remain advisory and must not
-block a completed publication.
+third-party action can post its report. Put the concise human-readable digest,
+compressed size, Dive metrics, Scout result count, and step outcomes in that
+same job summary. A workflow run is the durable home of this release analysis;
+source-commit comments are not a useful discovery surface and would require
+unnecessary repository write access. Dive thresholds and summary delivery
+remain advisory and must not block a completed publication.
 
 ## Measure Registry-Compressed Image Size
 

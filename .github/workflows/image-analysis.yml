@@ -25,17 +25,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    outputs:
-      tag: ${{ steps.image.outputs.tag }}
-      source_sha: ${{ steps.image.outputs.sha }}
-      image_ref: ${{ steps.published.outputs.ref }}
-      image_bytes: ${{ steps.metrics.outputs.image_bytes }}
-      dive_efficiency: ${{ steps.dive.outputs.efficiency }}
-      dive_wasted_bytes: ${{ steps.dive.outputs.wasted_bytes }}
-      dive_wasted_ratio: ${{ steps.dive.outputs.wasted_ratio }}
-      dive_verdict: ${{ steps.dive.outputs.verdict }}
-      scout_findings: ${{ steps.metrics.outputs.scout_findings }}
-      scout_outcome: ${{ steps.scout.outcome }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -191,79 +180,34 @@ jobs:
       - name: Summarize advisory analysis
         if: always()
         env:
+          DIVE_EFFICIENCY: ${{ steps.dive.outputs.efficiency }}
           DIVE_OUTCOME: ${{ steps.dive.outcome }}
+          DIVE_VERDICT: ${{ steps.dive.outputs.verdict }}
+          DIVE_WASTED_BYTES: ${{ steps.dive.outputs.wasted_bytes }}
+          DIVE_WASTED_RATIO: ${{ steps.dive.outputs.wasted_ratio }}
+          IMAGE_BYTES: ${{ steps.metrics.outputs.image_bytes }}
           IMAGE_REF: ${{ steps.published.outputs.ref }}
           SARIF_OUTCOME: ${{ steps.sarif.outcome }}
+          SCOUT_FINDINGS: ${{ steps.metrics.outputs.scout_findings }}
           SCOUT_OUTCOME: ${{ steps.scout.outcome }}
         run: |
           {
             echo '## Published image advisory analysis'
             echo
-            echo "- Image: \`$IMAGE_REF\`"
-            echo "- Dive step: $DIVE_OUTCOME"
-            echo "- Docker Scout step: $SCOUT_OUTCOME"
-            echo "- SARIF upload step: $SARIF_OUTCOME"
+            echo '| Result | Value |'
+            echo '| --- | --- |'
+            echo "| Image | \`${IMAGE_REF:-unavailable}\` |"
+            echo "| Compressed linux/amd64 bytes | ${IMAGE_BYTES:-unavailable} |"
+            echo "| Dive efficiency | ${DIVE_EFFICIENCY:-unavailable} |"
+            echo "| Dive wasted bytes | ${DIVE_WASTED_BYTES:-unavailable} |"
+            echo "| Dive user-wasted ratio | ${DIVE_WASTED_RATIO:-unavailable} |"
+            echo "| Dive threshold | ${DIVE_VERDICT:-unavailable} |"
+            echo "| Dive step | ${DIVE_OUTCOME:-unavailable} |"
+            echo "| Docker Scout step | ${SCOUT_OUTCOME:-unavailable} |"
+            echo "| Scout fixable critical/high findings | ${SCOUT_FINDINGS:-unavailable} |"
+            echo "| SARIF upload step | ${SARIF_OUTCOME:-unavailable} |"
             echo
-          echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
+            echo 'Dive is advisory and does not block publication.'
+            echo
+            echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
           } >> "$GITHUB_STEP_SUMMARY"
-
-  comment:
-    name: Publish analysis comment
-    needs: analyze
-    if: always() && needs.analyze.outputs.source_sha != ''
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Upsert commit comment
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ANALYSIS_RESULT: ${{ needs.analyze.result }}
-          DIVE_EFFICIENCY: ${{ needs.analyze.outputs.dive_efficiency }}
-          DIVE_VERDICT: ${{ needs.analyze.outputs.dive_verdict }}
-          DIVE_WASTED_BYTES: ${{ needs.analyze.outputs.dive_wasted_bytes }}
-          DIVE_WASTED_RATIO: ${{ needs.analyze.outputs.dive_wasted_ratio }}
-          IMAGE_BYTES: ${{ needs.analyze.outputs.image_bytes }}
-          IMAGE_REF: ${{ needs.analyze.outputs.image_ref }}
-          SCOUT_FINDINGS: ${{ needs.analyze.outputs.scout_findings }}
-          SCOUT_OUTCOME: ${{ needs.analyze.outputs.scout_outcome }}
-          SOURCE_SHA: ${{ needs.analyze.outputs.source_sha }}
-          TAG: ${{ needs.analyze.outputs.tag }}
-        run: |
-          marker="<!-- published-image-analysis:${TAG} -->"
-          comment_file="$RUNNER_TEMP/published-image-analysis.md"
-          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-          {
-            printf '%s\n\n' "$marker"
-            printf '## Published image analysis — `%s`\n\n' "$TAG"
-            printf '| Result | Value |\n'
-            printf '| --- | --- |\n'
-            printf '| Workflow | %s |\n' "${ANALYSIS_RESULT:-unavailable}"
-            printf '| Image | `%s` |\n' "${IMAGE_REF:-unavailable}"
-            printf '| Compressed linux/amd64 bytes | %s |\n' "${IMAGE_BYTES:-unavailable}"
-            printf '| Dive efficiency | %s |\n' "${DIVE_EFFICIENCY:-unavailable}"
-            printf '| Dive wasted bytes | %s |\n' "${DIVE_WASTED_BYTES:-unavailable}"
-            printf '| Dive user-wasted ratio | %s |\n' "${DIVE_WASTED_RATIO:-unavailable}"
-            printf '| Dive threshold | %s |\n' "${DIVE_VERDICT:-unavailable}"
-            printf '| Scout step | %s |\n' "${SCOUT_OUTCOME:-unavailable}"
-            printf '| Scout fixable critical/high findings | %s |\n\n' "${SCOUT_FINDINGS:-unavailable}"
-            printf 'Dive is advisory and does not block publication.\n\n'
-            printf '[Open the full workflow summary and reports](%s).\n' "$run_url"
-          } >"$comment_file"
-
-          comment_id="$(
-            gh api \
-              "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/comments?per_page=100" \
-              --jq "map(select(.body | contains(\"$marker\")))[0].id // empty"
-          )"
-          if [[ -n "$comment_id" ]]; then
-            gh api --method PATCH \
-              "repos/$GITHUB_REPOSITORY/comments/$comment_id" \
-              -F body=@"$comment_file"
-          else
-            gh api --method POST \
-              "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/comments" \
-              -F body=@"$comment_file"
-          fi

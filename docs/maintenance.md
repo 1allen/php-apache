@@ -265,12 +265,12 @@ result directly in the job summary; its full inefficient-file report is
 collapsed underneath and remains available in the workflow log. Scout reports
 fixable critical and high vulnerabilities and base-image recommendations in the
 job summary, and uploads SARIF to GitHub code scanning when that feature is
-available. A separate least-privilege job with `contents: write` upserts one
-concise commit comment per analyzed tag. The comment exposes the image digest
-and compressed size, Dive metrics and advisory verdict, Scout result count, and
-a link to the complete workflow summary. Reruns update the marked comment
-instead of adding duplicates; the analysis job itself retains read-only
-repository access apart from SARIF upload.
+available. The same job summary includes a concise human-readable table with
+the image digest and compressed size, Dive metrics and advisory verdict, Scout
+result count, and step outcomes. This keeps the complete analysis on the
+workflow run instead of scattering release results across source-commit
+comments, and the analysis job retains read-only repository access apart from
+SARIF upload.
 
 Operators can rerun the workflow manually for an existing version tag. Manual
 runs check out the default branch so they use the current analysis scripts,
@@ -278,8 +278,8 @@ while the requested tag supplies the image version and source commit; they
 require the tag to exist but do not require a newer publication or a historical
 Semaphore status. SARIF is associated with the matching supported `phpXX`
 source branch because GitHub code scanning does not accept a tag ref for this
-upload. Dive thresholds, scanner findings, SARIF upload failures, and comment
-failures remain advisory and do not change the completed release.
+upload. Dive thresholds, scanner findings, SARIF upload failures, and summary
+generation remain advisory and do not change the completed release.
 Docker Scout authentication reuses the existing protected `DOCKER_HUB_TOKEN`
 Actions secret used by the cleanup workflow; operators do not need to maintain
 a separate Scout credential.
