@@ -11,9 +11,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  security-events: write
+permissions: {}
 
 concurrency:
   group: image-analysis-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -24,6 +22,9 @@ jobs:
     name: Analyze published image
     runs-on: ubuntu-latest
     timeout-minutes: 70
+    permissions:
+      contents: read
+      security-events: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -104,6 +105,12 @@ jobs:
             dive_verdict="advisory threshold exceeded (exit code $dive_status)"
           fi
           {
+            echo "efficiency=$dive_efficiency"
+            echo "wasted_bytes=$dive_wasted_bytes"
+            echo "wasted_ratio=$dive_wasted_ratio"
+            echo "verdict=$dive_verdict"
+          } >> "$GITHUB_OUTPUT"
+          {
             echo '## Dive layer efficiency'
             echo
             echo "- Image: \`$IMAGE_REF\`"
@@ -139,6 +146,28 @@ jobs:
           sarif-file: docker-scout.sarif
           summary: true
           write-comment: false
+      - name: Collect human-readable analysis metrics
+        id: metrics
+        if: always()
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          scout_findings=unavailable
+          if [[ -s docker-scout.sarif ]]; then
+            scout_findings="$(
+              jq -r '[.runs[]?.results[]?] | length' docker-scout.sarif
+            )"
+          fi
+
+          image_bytes=unavailable
+          if image_metrics="$(
+            bash scripts/image_metrics.sh --format tsv "$IMAGE_TAG"
+          )"; then
+            image_bytes="$(awk -F '\t' 'NR == 2 { print $3 }' <<<"$image_metrics")"
+          fi
+
+          echo "scout_findings=$scout_findings" >> "$GITHUB_OUTPUT"
+          echo "image_bytes=${image_bytes:-unavailable}" >> "$GITHUB_OUTPUT"
       - name: Upload Docker Scout results
         id: sarif
         if: always() && hashFiles('docker-scout.sarif') != ''
@@ -151,18 +180,34 @@ jobs:
       - name: Summarize advisory analysis
         if: always()
         env:
+          DIVE_EFFICIENCY: ${{ steps.dive.outputs.efficiency }}
           DIVE_OUTCOME: ${{ steps.dive.outcome }}
+          DIVE_VERDICT: ${{ steps.dive.outputs.verdict }}
+          DIVE_WASTED_BYTES: ${{ steps.dive.outputs.wasted_bytes }}
+          DIVE_WASTED_RATIO: ${{ steps.dive.outputs.wasted_ratio }}
+          IMAGE_BYTES: ${{ steps.metrics.outputs.image_bytes }}
           IMAGE_REF: ${{ steps.published.outputs.ref }}
           SARIF_OUTCOME: ${{ steps.sarif.outcome }}
+          SCOUT_FINDINGS: ${{ steps.metrics.outputs.scout_findings }}
           SCOUT_OUTCOME: ${{ steps.scout.outcome }}
         run: |
           {
             echo '## Published image advisory analysis'
             echo
-            echo "- Image: \`$IMAGE_REF\`"
-            echo "- Dive step: $DIVE_OUTCOME"
-            echo "- Docker Scout step: $SCOUT_OUTCOME"
-            echo "- SARIF upload step: $SARIF_OUTCOME"
+            echo '| Result | Value |'
+            echo '| --- | --- |'
+            echo "| Image | \`${IMAGE_REF:-unavailable}\` |"
+            echo "| Compressed linux/amd64 bytes | ${IMAGE_BYTES:-unavailable} |"
+            echo "| Dive efficiency | ${DIVE_EFFICIENCY:-unavailable} |"
+            echo "| Dive wasted bytes | ${DIVE_WASTED_BYTES:-unavailable} |"
+            echo "| Dive user-wasted ratio | ${DIVE_WASTED_RATIO:-unavailable} |"
+            echo "| Dive threshold | ${DIVE_VERDICT:-unavailable} |"
+            echo "| Dive step | ${DIVE_OUTCOME:-unavailable} |"
+            echo "| Docker Scout step | ${SCOUT_OUTCOME:-unavailable} |"
+            echo "| Scout fixable critical/high findings | ${SCOUT_FINDINGS:-unavailable} |"
+            echo "| SARIF upload step | ${SARIF_OUTCOME:-unavailable} |"
             echo
-          echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
+            echo 'Dive is advisory and does not block publication.'
+            echo
+            echo 'The full Dive report and Scout findings are included in this job summary; Scout SARIF is also available in GitHub code scanning when upload succeeds.'
           } >> "$GITHUB_STEP_SUMMARY"
