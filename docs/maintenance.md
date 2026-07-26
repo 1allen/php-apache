@@ -265,15 +265,21 @@ result directly in the job summary; its full inefficient-file report is
 collapsed underneath and remains available in the workflow log. Scout reports
 fixable critical and high vulnerabilities and base-image recommendations in the
 job summary, and uploads SARIF to GitHub code scanning when that feature is
-available. Operators can
-rerun the workflow manually for an existing version tag. Manual runs check out
-the default branch so they use the current analysis scripts, while the
-requested tag supplies the image version and source commit; they require the
-tag to exist but do not require a newer publication or a historical Semaphore
-status. SARIF is associated with the matching supported `phpXX` source branch
-because GitHub code scanning does not accept a tag ref for this upload. Scanner
-findings and SARIF upload failures remain advisory and do not change the
-completed release.
+available. A separate least-privilege job with `contents: write` upserts one
+concise commit comment per analyzed tag. The comment exposes the image digest
+and compressed size, Dive metrics and advisory verdict, Scout result count, and
+a link to the complete workflow summary. Reruns update the marked comment
+instead of adding duplicates; the analysis job itself retains read-only
+repository access apart from SARIF upload.
+
+Operators can rerun the workflow manually for an existing version tag. Manual
+runs check out the default branch so they use the current analysis scripts,
+while the requested tag supplies the image version and source commit; they
+require the tag to exist but do not require a newer publication or a historical
+Semaphore status. SARIF is associated with the matching supported `phpXX`
+source branch because GitHub code scanning does not accept a tag ref for this
+upload. Dive thresholds, scanner findings, SARIF upload failures, and comment
+failures remain advisory and do not change the completed release.
 Docker Scout authentication reuses the existing protected `DOCKER_HUB_TOKEN`
 Actions secret used by the cleanup workflow; operators do not need to maintain
 a separate Scout credential.
@@ -407,9 +413,9 @@ do not mix the two metrics in one comparison.
 
 ### Image Layer Cleanup Canary
 
-Status as of 2026-07-26: the PHP 8.5 canary passed. The equivalent Dockerfile
-behavior is present on `php80` through `php85`, but tags `8.0` through `8.4`
-remain at their pre-change commits pending explicit rollout approval.
+Status as of 2026-07-26: the PHP 8.5 canary and the explicitly approved
+`8.0` through `8.4` rollout passed. Every supported version tag now contains
+the layer cleanup.
 
 The published Dive reports showed that the final stage installs
 `libmagickwand-dev` and its development dependencies in one `RUN`, then compiles
@@ -484,6 +490,25 @@ took 19 seconds, the Docker build took 104 seconds, publishing took 10 seconds,
 and the total took 133 seconds. Docker Scout reported zero fixable
 critical/high findings. The corresponding **Published image analysis** run
 passed, so the canary met every gate above.
+
+After explicit approval, tags `8.0` through `8.4` were published and analyzed.
+Compared with the immediately preceding images:
+
+| Tag | Compressed bytes before | Compressed bytes after | Saved | Dive ratio before | Dive ratio after | Fixable critical/high |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `8.0` | 444,371,359 | 403,316,309 | 9.24% | 25.5637% | 13.6437% | 13 / 46, unchanged |
+| `8.1` | 504,229,604 | 467,961,046 | 7.19% | 17.5677% | 11.8224% | 0 / 0 |
+| `8.2` | 485,873,666 | 449,607,800 | 7.46% | 10.4954% | 3.8881% | 0 / 0 |
+| `8.3` | 487,340,841 | 451,069,775 | 7.44% | 10.4067% | 3.8527% | 0 / 0 |
+| `8.4` | 493,108,301 | 456,827,954 | 7.36% | 10.5065% | 3.9151% | 0 / 0 |
+| `8.5` | 496,458,239 | 460,194,093 | 7.30% | 10.1041% | 3.6337% | 0 / 0 |
+
+Across all six tags, compressed linux/amd64 size fell by 222,405,033 bytes
+(7.64%). The rollout Docker builds took 102-108 seconds, so there was no
+material regression from the earlier 110-143 second cold-build range. Dive's
+10% threshold remains advisory: `8.0` and `8.1` exceed it because of remaining
+inherited image waste, but their ratios improved substantially and their
+analysis workflows completed successfully.
 
 ### Legacy Docker Tag Cleanup
 

@@ -585,7 +585,20 @@ workflow = YAML.load_file(ARGV.fetch(0))
 triggers = workflow["on"] || workflow[true] or abort "Missing workflow triggers"
 abort "Missing tag push trigger" unless triggers.key?("push")
 abort "Missing workflow_dispatch trigger" unless triggers.key?("workflow_dispatch")
-abort "Missing analyze job" unless workflow.fetch("jobs").key?("analyze")
+jobs = workflow.fetch("jobs")
+analyze = jobs["analyze"] or abort "Missing analyze job"
+comment = jobs["comment"] or abort "Missing comment job"
+abort "Analyze job permissions must stay read-only except for SARIF" unless analyze.fetch("permissions") == {
+    "contents" => "read",
+    "security-events" => "write",
+}
+abort "Comment job must isolate contents write permission" unless comment.fetch("permissions") == {
+    "contents" => "write",
+}
+abort "Comment job must depend on analysis" unless comment.fetch("needs") == "analyze"
+abort "Comment delivery must remain advisory" unless comment["continue-on-error"] == true
+dive = analyze.fetch("steps").find { |step| step["id"] == "dive" } or abort "Missing Dive step"
+abort "Dive must remain advisory" unless dive["continue-on-error"] == true
 
 uses = []
 walk = lambda do |value|
@@ -656,6 +669,10 @@ assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'ref: refs/heads/${{ steps.im
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'sha: ${{ steps.image.outputs.sha }}'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'github/codeql-action/upload-sarif@eec0bff2f6c15bf3f1e8a0152f94d17664a06a06'
 assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'SARIF_OUTCOME: ${{ steps.sarif.outcome }}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'published-image-analysis:${TAG}'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'commits/$SOURCE_SHA/comments'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'gh api --method PATCH'
+assert_file_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'Dive is advisory and does not block publication.'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker build'
 assert_file_not_contains "$GITHUB_IMAGE_ANALYSIS_PATH" 'docker push'
 
